@@ -30,7 +30,12 @@ import {
   Loader2,
   LogOut,
   LogIn,
-  Video
+  Video,
+  Trash2,
+  MoreVertical,
+  UserPlus,
+  UserCheck,
+  Edit3
 } from "lucide-react";
 
 // --- STORY MODES ---
@@ -62,7 +67,7 @@ const SAMPLE_STORIES = [
     userAvatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
     mediaUrl: "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800",
     category: "announcement",
-    caption: "🚀 Social Nest v1.0 is shaping up fast!",
+    caption: "🚀 Social Nest v2.0 is live with follows & notifications!",
   },
   {
     id: "s2",
@@ -76,13 +81,19 @@ const SAMPLE_STORIES = [
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
+  const [profile, setProfile] = useState(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const [activeTab, setActiveTab] = useState("home");
+  const [feedFilter, setFeedFilter] = useState("all"); // "all" or "following"
   const [selectedStoryIndex, setSelectedStoryIndex] = useState(null);
   const [activeFilter, setActiveFilter] = useState("all");
   const [posts, setPosts] = useState([]);
   const [sparks, setSparks] = useState([]);
+  const [followingHandles, setFollowingHandles] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [loadingSparks, setLoadingSparks] = useState(true);
   const [activeChat, setActiveChat] = useState(null);
@@ -90,40 +101,106 @@ export default function App() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isUploadSparkOpen, setIsUploadSparkOpen] = useState(false);
 
+  // Fetch full profile info from public.profiles
+  const fetchUserProfile = async (userId, userMetadata, email) => {
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .single();
+
+      if (data && !error) {
+        setProfile(data);
+      } else {
+        setProfile({
+          id: userId,
+          handle: userMetadata?.handle || email?.split("@")[0] || "user",
+          full_name: userMetadata?.full_name || "SocialNest Creator",
+          avatar_url: userMetadata?.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300",
+          bio: "Exploring Social Nest 🚀",
+        });
+      }
+    } catch (e) {
+      console.error("Profile load err:", e);
+    }
+  };
+
   // Auth session listener
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setCurrentUser(session?.user ?? null);
+      const u = session?.user ?? null;
+      setCurrentUser(u);
+      if (u) fetchUserProfile(u.id, u.user_metadata, u.email);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setCurrentUser(session?.user ?? null);
+      const u = session?.user ?? null;
+      setCurrentUser(u);
+      if (u) fetchUserProfile(u.id, u.user_metadata, u.email);
+      else setProfile(null);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const profileData = {
-    name: currentUser?.user_metadata?.full_name || "Guest Creator",
-    handle: currentUser?.user_metadata?.handle || (currentUser ? currentUser.email.split("@")[0] : "guest"),
-    avatar: currentUser?.user_metadata?.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300",
-    bio: currentUser ? "Building Social Nest 🛠️" : "Browse mode. Sign in to post, like, and chat!",
-    stats: { 
-      posts: posts.filter((p) => p.username === (currentUser?.user_metadata?.handle || currentUser?.email?.split("@")[0])).length, 
-      followers: "120", 
-      following: 45 
-    },
-    posts: [
-      "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=400",
-      "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=400",
-    ]
+  const currentHandle = profile?.handle || (currentUser ? currentUser.email.split("@")[0] : "guest");
+  const currentAvatar = profile?.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300";
+
+  // Fetch follows & notifications
+  const fetchFollowsAndNotifications = async () => {
+    if (!currentHandle || currentHandle === "guest") return;
+
+    // Follows
+    const { data: followData } = await supabase
+      .from("follows")
+      .select("following_handle")
+      .eq("follower_handle", currentHandle);
+
+    if (followData) {
+      setFollowingHandles(followData.map((f) => f.following_handle));
+    }
+
+    // Notifications
+    const { data: notifData } = await supabase
+      .from("notifications")
+      .select("*")
+      .eq("recipient_handle", currentHandle)
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (notifData) {
+      setNotifications(notifData);
+    }
   };
 
-  const filteredStories =
-    activeFilter === "all"
-      ? SAMPLE_STORIES
-      : SAMPLE_STORIES.filter((s) => s.category === activeFilter);
+  useEffect(() => {
+    fetchFollowsAndNotifications();
 
+    // Realtime notification listener
+    if (!currentHandle || currentHandle === "guest") return;
+    const channel = supabase
+      .channel("public_notifications")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "notifications",
+          filter: `recipient_handle=eq.${currentHandle}`,
+        },
+        (payload) => {
+          setNotifications((prev) => [payload.new, ...prev]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentHandle]);
+
+  // Fetch posts
   const fetchPosts = async () => {
     try {
       setLoadingPosts(true);
@@ -138,7 +215,7 @@ export default function App() {
         id: p.id,
         type: p.post_type,
         username: p.user_handle,
-        userAvatar: p.user_avatar || profileData.avatar,
+        userAvatar: p.user_avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
         timeAgo: new Date(p.created_at).toLocaleDateString([], {
           month: "short",
           day: "numeric",
@@ -162,6 +239,7 @@ export default function App() {
     }
   };
 
+  // Fetch Sparks
   const fetchSparks = async () => {
     try {
       setLoadingSparks(true);
@@ -181,7 +259,7 @@ export default function App() {
             user_handle: "nest_official",
             user_avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
             video_url: "https://assets.mixkit.co/videos/preview/mixkit-tree-branches-in-the-breeze-1188-large.mp4",
-            caption: "Welcome to Sparks! Upload your own short vertical clips ⚡",
+            caption: "Welcome to Sparks! Upload your short vertical clips ⚡",
             song_title: "Original Sound - Social Nest",
             likes_count: 42
           }
@@ -199,12 +277,13 @@ export default function App() {
     fetchSparks();
   }, []);
 
+  // Post Actions
   const handleAddNewPost = async (newPost) => {
     try {
       const { error } = await supabase.from("posts").insert([
         {
-          user_handle: profileData.handle,
-          user_avatar: profileData.avatar,
+          user_handle: currentHandle,
+          user_avatar: currentAvatar,
           content: newPost.content,
           media_url: newPost.mediaUrl,
           post_type: newPost.type,
@@ -213,71 +292,57 @@ export default function App() {
       ]);
 
       if (error) throw error;
-
       fetchPosts();
       setIsCreateOpen(false);
     } catch (err) {
-      console.error("Error creating post:", err.message);
       alert("Failed to post: " + err.message);
     }
   };
 
-  const handleAddSpark = async (sparkPayload) => {
+  const handleDeletePost = async (postId) => {
+    if (!window.confirm("Are you sure you want to delete this post?")) return;
     try {
-      const { error } = await supabase.from("sparks").insert([
-        {
-          user_handle: profileData.handle,
-          user_avatar: profileData.avatar,
-          video_url: sparkPayload.videoUrl,
-          caption: sparkPayload.caption,
-          song_title: sparkPayload.songTitle || "Original Audio",
-          likes_count: 0
-        }
-      ]);
-
+      const { error } = await supabase.from("posts").delete().eq("id", postId);
       if (error) throw error;
-
-      fetchSparks();
-      setIsUploadSparkOpen(false);
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
     } catch (err) {
-      console.error("Error uploading spark:", err.message);
-      alert("Failed to post spark: " + err.message);
+      alert("Failed to delete post: " + err.message);
     }
   };
 
-  const handleLikePost = async (postId, currentLikes, isLiked) => {
-    const updatedCount = isLiked ? Math.max(0, currentLikes - 1) : currentLikes + 1;
+  const handleLikePost = async (post, isLiked) => {
+    if (!currentUser) {
+      setAuthModalOpen(true);
+      return;
+    }
+
+    const updatedCount = isLiked ? Math.max(0, post.likes - 1) : post.likes + 1;
     setPosts((prev) =>
-      prev.map((p) => (p.id === postId ? { ...p, likes: updatedCount } : p))
+      prev.map((p) => (p.id === post.id ? { ...p, likes: updatedCount } : p))
     );
 
     try {
       await supabase
         .from("posts")
         .update({ likes_count: updatedCount })
-        .eq("id", postId);
+        .eq("id", post.id);
+
+      if (!isLiked && post.username !== currentHandle) {
+        await supabase.from("notifications").insert([
+          {
+            recipient_handle: post.username,
+            sender_handle: currentHandle,
+            type: "like",
+            post_id: post.id,
+          },
+        ]);
+      }
     } catch (err) {
       console.error("Error syncing like:", err.message);
     }
   };
 
-  const handleLikeSpark = async (sparkId, currentLikes, isLiked) => {
-    const updatedCount = isLiked ? Math.max(0, currentLikes - 1) : currentLikes + 1;
-    setSparks((prev) =>
-      prev.map((s) => (s.id === sparkId ? { ...s, likes_count: updatedCount } : s))
-    );
-
-    try {
-      await supabase
-        .from("sparks")
-        .update({ likes_count: updatedCount })
-        .eq("id", sparkId);
-    } catch (err) {
-      console.error("Error liking spark:", err.message);
-    }
-  };
-
-  const handleAddComment = async (postId, commentText) => {
+  const handleAddComment = async (postId, postOwnerHandle, commentText) => {
     if (!currentUser) {
       setAuthModalOpen(true);
       return;
@@ -289,7 +354,7 @@ export default function App() {
         .insert([
           {
             post_id: postId,
-            user_handle: profileData.handle,
+            user_handle: currentHandle,
             content: commentText,
           },
         ])
@@ -305,21 +370,87 @@ export default function App() {
 
       setPosts((prev) =>
         prev.map((p) =>
-          p.id === postId
-            ? { ...p, comments: [...p.comments, createdComment] }
-            : p
+          p.id === postId ? { ...p, comments: [...p.comments, createdComment] } : p
         )
       );
 
       setActiveCommentPost((prev) =>
-        prev && prev.id === postId
-          ? { ...prev, comments: [...prev.comments, createdComment] }
-          : prev
+        prev && prev.id === postId ? { ...prev, comments: [...prev.comments, createdComment] } : prev
       );
+
+      if (postOwnerHandle !== currentHandle) {
+        await supabase.from("notifications").insert([
+          {
+            recipient_handle: postOwnerHandle,
+            sender_handle: currentHandle,
+            type: "comment",
+            post_id: postId,
+          },
+        ]);
+      }
     } catch (err) {
       console.error("Error posting comment:", err.message);
     }
   };
+
+  // Follow / Unfollow logic
+  const handleToggleFollow = async (targetHandle) => {
+    if (!currentUser) {
+      setAuthModalOpen(true);
+      return;
+    }
+
+    const isFollowing = followingHandles.includes(targetHandle);
+
+    if (isFollowing) {
+      setFollowingHandles((prev) => prev.filter((h) => h !== targetHandle));
+      await supabase
+        .from("follows")
+        .delete()
+        .eq("follower_handle", currentHandle)
+        .eq("following_handle", targetHandle);
+    } else {
+      setFollowingHandles((prev) => [...prev, targetHandle]);
+      await supabase.from("follows").insert([
+        { follower_handle: currentHandle, following_handle: targetHandle },
+      ]);
+      await supabase.from("notifications").insert([
+        {
+          recipient_handle: targetHandle,
+          sender_handle: currentHandle,
+          type: "follow",
+        },
+      ]);
+    }
+  };
+
+  const handleUpdateProfile = async (updatedData) => {
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          full_name: updatedData.full_name,
+          bio: updatedData.bio,
+          avatar_url: updatedData.avatar_url,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", currentUser.id);
+
+      if (error) throw error;
+
+      setProfile((prev) => ({ ...prev, ...updatedData }));
+      setEditProfileOpen(false);
+    } catch (err) {
+      alert("Failed to update profile: " + err.message);
+    }
+  };
+
+  const unreadNotifCount = notifications.filter((n) => !n.is_read).length;
+
+  const displayedPosts =
+    feedFilter === "following"
+      ? posts.filter((p) => followingHandles.includes(p.username) || p.username === currentHandle)
+      : posts;
 
   return (
     <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center pb-24 selection:bg-amber-500 selection:text-black">
@@ -328,14 +459,25 @@ export default function App() {
         <h1 className="text-xl font-black tracking-wider bg-gradient-to-r from-amber-400 via-orange-400 to-rose-400 bg-clip-text text-transparent">
           SOCIAL NEST
         </h1>
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
+          {/* Notifications Bell */}
+          <button
+            onClick={() => setNotificationsOpen(true)}
+            className="relative p-2 text-slate-300 hover:text-white rounded-full transition-colors"
+          >
+            <Bell size={19} />
+            {unreadNotifCount > 0 && (
+              <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-rose-500 rounded-full animate-pulse" />
+            )}
+          </button>
+
           {currentUser ? (
             <button
               onClick={() => setActiveTab("profile")}
               className="flex items-center gap-1.5 py-1 px-2.5 rounded-full bg-slate-900 border border-slate-800 text-xs text-amber-400 font-semibold"
             >
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              @{profileData.handle}
+              <img src={currentAvatar} className="w-4 h-4 rounded-full object-cover" />
+              @{currentHandle}
             </button>
           ) : (
             <button
@@ -348,10 +490,9 @@ export default function App() {
 
           <button
             onClick={() => setActiveTab("messages")}
-            className="relative p-1.5 text-slate-300 hover:text-white transition-colors"
+            className="p-2 text-slate-300 hover:text-white rounded-full transition-colors"
           >
-            <Mail size={20} />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-amber-500 rounded-full" />
+            <Mail size={19} />
           </button>
         </div>
       </header>
@@ -360,13 +501,19 @@ export default function App() {
       <main className="w-full max-w-md px-3 pt-3">
         {activeTab === "home" && (
           <HomeView
-            stories={filteredStories}
+            stories={SAMPLE_STORIES}
             activeFilter={activeFilter}
             setActiveFilter={setActiveFilter}
+            feedFilter={feedFilter}
+            setFeedFilter={setFeedFilter}
             onSelectStory={(idx) => setSelectedStoryIndex(idx)}
-            posts={posts}
+            posts={displayedPosts}
             loading={loadingPosts}
-            profileAvatar={profileData.avatar}
+            profileAvatar={currentAvatar}
+            currentHandle={currentHandle}
+            followingHandles={followingHandles}
+            onToggleFollow={handleToggleFollow}
+            onDeletePost={handleDeletePost}
             onOpenCreate={() => (!currentUser ? setAuthModalOpen(true) : setIsCreateOpen(true))}
             onOpenComments={(post) => setActiveCommentPost(post)}
             onLikePost={handleLikePost}
@@ -390,17 +537,11 @@ export default function App() {
                 <div className="h-full flex items-center justify-center text-xs text-slate-500">
                   <Loader2 className="animate-spin mr-2" size={16} /> Loading Sparks...
                 </div>
-              ) : sparks.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-xs text-slate-500 gap-2">
-                  <Zap size={28} className="opacity-40 text-amber-500" />
-                  No clips found. Be the first to upload one!
-                </div>
               ) : (
                 sparks.map((spark) => (
                   <SparkCard
                     key={spark.id}
                     spark={spark}
-                    onLikeSpark={handleLikeSpark}
                     heightClass="h-[76vh]"
                   />
                 ))
@@ -412,7 +553,7 @@ export default function App() {
         {activeTab === "messages" && (
           <MessagesView
             currentUser={currentUser}
-            currentHandle={profileData.handle}
+            currentHandle={currentHandle}
             activeChat={activeChat}
             onSelectChat={(chat) => setActiveChat(chat)}
             onBack={() => setActiveChat(null)}
@@ -422,9 +563,19 @@ export default function App() {
 
         {activeTab === "profile" && (
           <ProfileView
-            user={profileData}
+            user={{
+              name: profile?.full_name || "Creator",
+              handle: currentHandle,
+              avatar: currentAvatar,
+              bio: profile?.bio || "Exploring Social Nest 🚀",
+              stats: {
+                posts: posts.filter((p) => p.username === currentHandle).length,
+                following: followingHandles.length,
+              }
+            }}
             currentUser={currentUser}
             onOpenAuth={() => setAuthModalOpen(true)}
+            onOpenEditProfile={() => setEditProfileOpen(true)}
           />
         )}
       </main>
@@ -433,26 +584,16 @@ export default function App() {
       <nav className="fixed bottom-0 inset-x-0 bg-slate-950/95 backdrop-blur-xl border-t border-slate-900 px-6 py-2.5 z-40 flex justify-center">
         <div className="w-full max-w-md flex items-center justify-around">
           <button
-            onClick={() => {
-              setActiveTab("home");
-              setActiveChat(null);
-            }}
-            className={`flex flex-col items-center gap-1 transition-colors ${
-              activeTab === "home" ? "text-amber-400" : "text-slate-500 hover:text-slate-300"
-            }`}
+            onClick={() => { setActiveTab("home"); setActiveChat(null); }}
+            className={`flex flex-col items-center gap-1 transition-colors ${activeTab === "home" ? "text-amber-400" : "text-slate-500 hover:text-slate-300"}`}
           >
             <Home size={22} />
             <span className="text-[10px] font-medium">Feed</span>
           </button>
 
           <button
-            onClick={() => {
-              setActiveTab("sparks");
-              setActiveChat(null);
-            }}
-            className={`flex flex-col items-center gap-1 transition-colors ${
-              activeTab === "sparks" ? "text-amber-400" : "text-slate-500 hover:text-slate-300"
-            }`}
+            onClick={() => { setActiveTab("sparks"); setActiveChat(null); }}
+            className={`flex flex-col items-center gap-1 transition-colors ${activeTab === "sparks" ? "text-amber-400" : "text-slate-500 hover:text-slate-300"}`}
           >
             <Zap size={22} className={activeTab === "sparks" ? "fill-amber-400 text-amber-400" : ""} />
             <span className="text-[10px] font-medium">Sparks</span>
@@ -467,22 +608,15 @@ export default function App() {
 
           <button
             onClick={() => setActiveTab("messages")}
-            className={`flex flex-col items-center gap-1 transition-colors ${
-              activeTab === "messages" ? "text-amber-400" : "text-slate-500 hover:text-slate-300"
-            }`}
+            className={`flex flex-col items-center gap-1 transition-colors ${activeTab === "messages" ? "text-amber-400" : "text-slate-500 hover:text-slate-300"}`}
           >
             <Mail size={22} />
             <span className="text-[10px] font-medium">Chats</span>
           </button>
 
           <button
-            onClick={() => {
-              setActiveTab("profile");
-              setActiveChat(null);
-            }}
-            className={`flex flex-col items-center gap-1 transition-colors ${
-              activeTab === "profile" ? "text-amber-400" : "text-slate-500 hover:text-slate-300"
-            }`}
+            onClick={() => { setActiveTab("profile"); setActiveChat(null); }}
+            className={`flex flex-col items-center gap-1 transition-colors ${activeTab === "profile" ? "text-amber-400" : "text-slate-500 hover:text-slate-300"}`}
           >
             <User size={22} />
             <span className="text-[10px] font-medium">Profile</span>
@@ -490,45 +624,79 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Modals */}
+      {/* Modals & Drawers */}
       {authModalOpen && <AuthModal onClose={() => setAuthModalOpen(false)} />}
+      {editProfileOpen && (
+        <EditProfileModal
+          currentProfile={profile}
+          onClose={() => setEditProfileOpen(false)}
+          onSave={handleUpdateProfile}
+        />
+      )}
+      {notificationsOpen && (
+        <NotificationsDrawer
+          notifications={notifications}
+          onClose={() => setNotificationsOpen(false)}
+        />
+      )}
       {isCreateOpen && <CreatePostModal onClose={() => setIsCreateOpen(false)} onSubmit={handleAddNewPost} />}
-      {isUploadSparkOpen && <UploadSparkModal onClose={() => setIsUploadSparkOpen(false)} onSubmit={handleAddSpark} />}
-      {activeCommentPost && <CommentsDrawer post={activeCommentPost} onClose={() => setActiveCommentPost(null)} onAddComment={handleAddComment} />}
-      {selectedStoryIndex !== null && <StoryViewerModal stories={filteredStories} initialIndex={selectedStoryIndex} onClose={() => setSelectedStoryIndex(null)} />}
+      {isUploadSparkOpen && <UploadSparkModal onClose={() => setIsUploadSparkOpen(false)} onSubmit={() => { fetchSparks(); setIsUploadSparkOpen(false); }} />}
+      {activeCommentPost && (
+        <CommentsDrawer
+          post={activeCommentPost}
+          onClose={() => setActiveCommentPost(null)}
+          onAddComment={(postId, text) => handleAddComment(postId, activeCommentPost.username, text)}
+        />
+      )}
+      {selectedStoryIndex !== null && <StoryViewerModal stories={SAMPLE_STORIES} initialIndex={selectedStoryIndex} onClose={() => setSelectedStoryIndex(null)} />}
     </div>
   );
 }
 
-// --- HOME VIEW ---
-function HomeView({ stories, activeFilter, setActiveFilter, onSelectStory, posts, loading, profileAvatar, onOpenCreate, onOpenComments, onLikePost }) {
+// --- HOME VIEW WITH FEED TABS ---
+function HomeView({
+  stories,
+  activeFilter,
+  setActiveFilter,
+  feedFilter,
+  setFeedFilter,
+  onSelectStory,
+  posts,
+  loading,
+  profileAvatar,
+  currentHandle,
+  followingHandles,
+  onToggleFollow,
+  onDeletePost,
+  onOpenCreate,
+  onOpenComments,
+  onLikePost
+}) {
   return (
-    <div className="flex flex-col gap-4">
-      <div className="bg-slate-900/60 backdrop-blur-sm p-4 rounded-2xl border border-slate-800/80 shadow-lg">
-        <div className="flex gap-2 pb-3 border-b border-slate-800/60 text-xs overflow-x-auto">
-          <button
-            onClick={() => setActiveFilter("all")}
-            className={`px-3 py-1 rounded-full transition-all ${
-              activeFilter === "all" ? "bg-amber-400 text-slate-950 font-bold" : "bg-slate-800 text-slate-400"
-            }`}
-          >
-            All
-          </button>
-          {Object.entries(STORY_MODES).map(([key, config]) => (
-            <button
-              key={key}
-              onClick={() => setActiveFilter(key)}
-              className={`px-3 py-1 rounded-full flex items-center gap-1.5 transition-all ${
-                activeFilter === key ? "bg-amber-400 text-slate-950 font-bold" : "bg-slate-800 text-slate-400"
-              }`}
-            >
-              <config.icon size={12} />
-              {config.label}
-            </button>
-          ))}
-        </div>
+    <div className="flex flex-col gap-3.5">
+      {/* Feed Toggle: For You vs Following */}
+      <div className="flex bg-slate-900/80 p-1 rounded-xl border border-slate-800 text-xs font-semibold">
+        <button
+          onClick={() => setFeedFilter("all")}
+          className={`flex-1 py-1.5 rounded-lg transition-all ${
+            feedFilter === "all" ? "bg-amber-500 text-black font-bold shadow-md shadow-amber-500/20" : "text-slate-400 hover:text-white"
+          }`}
+        >
+          Explore
+        </button>
+        <button
+          onClick={() => setFeedFilter("following")}
+          className={`flex-1 py-1.5 rounded-lg transition-all ${
+            feedFilter === "following" ? "bg-amber-500 text-black font-bold shadow-md shadow-amber-500/20" : "text-slate-400 hover:text-white"
+          }`}
+        >
+          Following ({followingHandles.length})
+        </button>
+      </div>
 
-        <div className="flex gap-4 pt-4 overflow-x-auto no-scrollbar">
+      {/* Story Tray */}
+      <div className="bg-slate-900/60 backdrop-blur-sm p-3.5 rounded-2xl border border-slate-800/80 shadow-lg">
+        <div className="flex gap-4 overflow-x-auto no-scrollbar">
           {stories.map((story, idx) => {
             const mode = STORY_MODES[story.category];
             return (
@@ -538,29 +706,21 @@ function HomeView({ stories, activeFilter, setActiveFilter, onSelectStory, posts
                 className="flex flex-col items-center gap-1.5 focus:outline-none flex-shrink-0"
               >
                 <div className={`p-[2.5px] rounded-full bg-gradient-to-tr ${mode.color} transition-transform hover:scale-105`}>
-                  <img
-                    src={story.userAvatar}
-                    alt=""
-                    className="w-14 h-14 rounded-full object-cover border-2 border-slate-950"
-                  />
+                  <img src={story.userAvatar} className="w-12 h-12 rounded-full object-cover border-2 border-slate-950" />
                 </div>
-                <span className="text-xs text-slate-300 truncate max-w-[60px]">
-                  {story.username}
-                </span>
+                <span className="text-[11px] text-slate-300 truncate max-w-[55px]">{story.username}</span>
               </button>
             );
           })}
         </div>
       </div>
 
+      {/* Quick Text Bar */}
       <div
         onClick={onOpenCreate}
         className="bg-slate-900/50 border border-slate-800/80 rounded-2xl p-3.5 flex items-center gap-3 cursor-pointer hover:border-slate-700 transition-colors shadow-sm"
       >
-        <img
-          src={profileAvatar}
-          className="w-9 h-9 rounded-full object-cover border border-slate-800"
-        />
+        <img src={profileAvatar} className="w-8 h-8 rounded-full object-cover border border-slate-800" />
         <span className="text-xs text-slate-400 flex-1">Share a thought or photo...</span>
         <div className="flex items-center gap-2 text-slate-400">
           <MessageSquare size={16} />
@@ -568,18 +728,27 @@ function HomeView({ stories, activeFilter, setActiveFilter, onSelectStory, posts
         </div>
       </div>
 
-      <div className="flex flex-col gap-3.5">
+      {/* Feed List */}
+      <div className="flex flex-col gap-3">
         {loading ? (
           <p className="text-xs text-slate-500 text-center py-8">Loading posts from database...</p>
         ) : posts.length === 0 ? (
-          <p className="text-xs text-slate-500 text-center py-8">No posts found. Be the first to share something!</p>
+          <div className="text-center py-12 text-slate-500 text-xs">
+            {feedFilter === "following"
+              ? "You aren't following anyone with posts yet! Switch to Explore to discover creators."
+              : "No posts yet. Be the first to share something!"}
+          </div>
         ) : (
           posts.map((post) => (
             <FeedCard
               key={post.id}
               post={post}
+              currentHandle={currentHandle}
+              isFollowing={followingHandles.includes(post.username)}
+              onToggleFollow={() => onToggleFollow(post.username)}
+              onDeletePost={() => onDeletePost(post.id)}
               onOpenComments={() => onOpenComments(post)}
-              onLikePost={onLikePost}
+              onLikePost={() => onLikePost(post, false)}
             />
           ))
         )}
@@ -588,31 +757,58 @@ function HomeView({ stories, activeFilter, setActiveFilter, onSelectStory, posts
   );
 }
 
-// --- FEED CARD ---
-function FeedCard({ post, onOpenComments, onLikePost }) {
-  const [liked, setLiked] = useState(false);
-
-  const toggleLike = () => {
-    const nextLiked = !liked;
-    setLiked(nextLiked);
-    onLikePost(post.id, post.likes, liked);
-  };
+// --- FEED CARD WITH FOLLOW BUTTON & DELETE MENU ---
+function FeedCard({ post, currentHandle, isFollowing, onToggleFollow, onDeletePost, onOpenComments, onLikePost }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const isOwner = post.username === currentHandle;
 
   return (
-    <div className="bg-slate-900/50 border border-slate-800/80 rounded-2xl p-4 shadow-sm hover:border-slate-800 transition-all">
+    <div className="bg-slate-900/50 border border-slate-800/80 rounded-2xl p-4 shadow-sm hover:border-slate-800 transition-all relative">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2.5">
           <img src={post.userAvatar} className="w-9 h-9 rounded-full object-cover border border-slate-800" />
           <div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-slate-200">@{post.username}</span>
-              <span className="text-[11px] text-slate-500">· {post.timeAgo}</span>
+              {!isOwner && (
+                <button
+                  onClick={onToggleFollow}
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-all flex items-center gap-1 ${
+                    isFollowing
+                      ? "bg-slate-800 text-slate-400 border border-slate-700"
+                      : "bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20"
+                  }`}
+                >
+                  {isFollowing ? <UserCheck size={10} /> : <UserPlus size={10} />}
+                  {isFollowing ? "Following" : "Follow"}
+                </button>
+              )}
             </div>
-            <span className="text-[10px] text-amber-400 font-medium capitalize">
-              {post.type === "media" ? "Photo Post" : "Thought"}
-            </span>
+            <span className="text-[10px] text-slate-500">{post.timeAgo}</span>
           </div>
         </div>
+
+        {/* Dropdown Options */}
+        {isOwner && (
+          <div className="relative">
+            <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="p-1 text-slate-500 hover:text-white rounded-lg"
+            >
+              <MoreVertical size={16} />
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-6 bg-slate-900 border border-slate-800 rounded-xl p-1 shadow-xl z-20 w-28">
+                <button
+                  onClick={() => { setMenuOpen(false); onDeletePost(); }}
+                  className="w-full text-left px-2.5 py-1.5 text-xs text-rose-400 hover:bg-rose-500/10 rounded-lg flex items-center gap-1.5"
+                >
+                  <Trash2 size={13} /> Delete
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {post.content && (
@@ -629,12 +825,10 @@ function FeedCard({ post, onOpenComments, onLikePost }) {
 
       <div className="flex items-center justify-between pt-2 border-t border-slate-800/60 text-slate-400">
         <button
-          onClick={toggleLike}
-          className={`flex items-center gap-1.5 text-xs transition-colors ${
-            liked ? "text-rose-500 font-semibold" : "hover:text-rose-400"
-          }`}
+          onClick={onLikePost}
+          className="flex items-center gap-1.5 text-xs hover:text-rose-400 transition-colors"
         >
-          <Heart size={16} className={liked ? "fill-rose-500" : ""} />
+          <Heart size={16} />
           <span>{post.likes}</span>
         </button>
 
@@ -659,6 +853,257 @@ function FeedCard({ post, onOpenComments, onLikePost }) {
   );
 }
 
+// --- NOTIFICATIONS DRAWER ---
+function NotificationsDrawer({ notifications, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex justify-end">
+      <div className="w-full max-w-sm h-full bg-slate-900 border-l border-slate-800 p-5 flex flex-col shadow-2xl">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+          <div className="flex items-center gap-2">
+            <Bell size={18} className="text-amber-400" />
+            <h3 className="text-sm font-bold text-white">Notifications</h3>
+          </div>
+          <button onClick={onClose} className="p-1 text-slate-400 hover:text-white">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto py-3 flex flex-col gap-2">
+          {notifications.length === 0 ? (
+            <p className="text-xs text-slate-500 text-center py-16">No notifications yet.</p>
+          ) : (
+            notifications.map((n) => (
+              <div
+                key={n.id}
+                className="p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl flex items-center gap-3 text-xs"
+              >
+                <div className="p-2 rounded-full bg-amber-500/10 text-amber-400">
+                  {n.type === "like" && <Heart size={14} className="fill-amber-400" />}
+                  {n.type === "comment" && <MessageCircle size={14} />}
+                  {n.type === "follow" && <UserPlus size={14} />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-slate-200">
+                    <span className="font-bold text-amber-400">@{n.sender_handle}</span>{" "}
+                    {n.type === "like" && "liked your post."}
+                    {n.type === "comment" && "commented on your post."}
+                    {n.type === "follow" && "started following you."}
+                  </p>
+                  <span className="text-[10px] text-slate-500">
+                    {new Date(n.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- EDIT PROFILE MODAL WITH DEVICE AVATAR UPLOAD ---
+function EditProfileModal({ currentProfile, onClose, onSave }) {
+  const [fullName, setFullName] = useState(currentProfile?.full_name || "");
+  const [bio, setBio] = useState(currentProfile?.bio || "");
+  const [avatarUrl, setAvatarUrl] = useState(currentProfile?.avatar_url || "");
+  const [uploading, setUploading] = useState(false);
+  const avatarInputRef = useRef(null);
+
+  const handleAvatarFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const fileExt = file.name.split(".").pop();
+      const filePath = `avatar-${Date.now()}.${fileExt}`;
+
+      const { error } = await supabase.storage.from("avatars").upload(filePath, file);
+      if (error) throw error;
+
+      const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
+      setAvatarUrl(data.publicUrl);
+    } catch (err) {
+      alert("Failed to upload avatar: " + err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSaveSubmit = (e) => {
+    e.preventDefault();
+    onSave({
+      full_name: fullName.trim(),
+      bio: bio.trim(),
+      avatar_url: avatarUrl,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative">
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white">
+          <X size={20} />
+        </button>
+
+        <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
+          <Edit3 size={16} className="text-amber-400" /> Edit Profile
+        </h3>
+
+        <form onSubmit={handleSaveSubmit} className="flex flex-col gap-4">
+          {/* Avatar Preview & Upload */}
+          <div className="flex flex-col items-center gap-2">
+            <div className="relative group cursor-pointer" onClick={() => avatarInputRef.current?.click()}>
+              <img
+                src={avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300"}
+                className="w-20 h-20 rounded-full object-cover border-2 border-amber-500"
+              />
+              <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <Camera size={20} className="text-white" />
+              </div>
+            </div>
+            <input
+              type="file"
+              accept="image/*"
+              ref={avatarInputRef}
+              onChange={handleAvatarFileChange}
+              className="hidden"
+            />
+            <span className="text-[11px] text-slate-400">
+              {uploading ? "Uploading image..." : "Tap photo to change avatar"}
+            </span>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-semibold text-slate-400 block mb-1">Full Name</label>
+            <input
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="e.g. Alex Rivera"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-semibold text-slate-400 block mb-1">Bio</label>
+            <textarea
+              rows={3}
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              placeholder="Tell others what you're building or thinking..."
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-amber-500 resize-none"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={uploading}
+            className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-black font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
+          >
+            Save Profile
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// --- PROFILE VIEW ---
+function ProfileView({ user, currentUser, onOpenAuth, onOpenEditProfile }) {
+  const [profileTab, setProfileTab] = useState("posts");
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="bg-slate-900/50 border border-slate-800/80 rounded-2xl p-5 shadow-lg">
+        <div className="flex items-center justify-between">
+          <img
+            src={user.avatar}
+            className="w-20 h-20 rounded-full object-cover border-2 border-amber-500 p-0.5"
+          />
+          <div className="flex gap-6 text-center">
+            <div>
+              <p className="font-bold text-base">{user.stats.posts}</p>
+              <p className="text-[11px] text-slate-400">Posts</p>
+            </div>
+            <div>
+              <p className="font-bold text-base">{user.stats.following}</p>
+              <p className="text-[11px] text-slate-400">Following</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <h2 className="font-bold text-sm">{user.name}</h2>
+          <p className="text-xs text-amber-400">@{user.handle}</p>
+          <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">{user.bio}</p>
+        </div>
+
+        <div className="flex gap-2.5 mt-4">
+          {currentUser ? (
+            <>
+              <button
+                onClick={onOpenEditProfile}
+                className="flex-1 bg-white hover:bg-slate-200 text-slate-950 font-semibold text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <Edit3 size={13} /> Edit Profile
+              </button>
+              <button
+                onClick={handleSignOut}
+                className="px-3.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-semibold text-xs py-2 rounded-xl flex items-center gap-1.5 transition-colors"
+              >
+                <LogOut size={14} /> Log Out
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={onOpenAuth}
+              className="flex-1 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs py-2.5 rounded-xl shadow-lg shadow-amber-500/20 transition-all"
+            >
+              Sign In to Your Account
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex border-b border-slate-800">
+        <button
+          onClick={() => setProfileTab("posts")}
+          className={`flex-1 py-2.5 flex justify-center items-center gap-2 text-xs font-semibold border-b-2 transition-all ${
+            profileTab === "posts" ? "border-amber-400 text-amber-400" : "border-transparent text-slate-500 hover:text-slate-300"
+          }`}
+        >
+          <Grid size={16} /> Posts
+        </button>
+        <button
+          onClick={() => setProfileTab("sparks")}
+          className={`flex-1 py-2.5 flex justify-center items-center gap-2 text-xs font-semibold border-b-2 transition-all ${
+            profileTab === "sparks" ? "border-amber-400 text-amber-400" : "border-transparent text-slate-500 hover:text-slate-300"
+          }`}
+        >
+          <Film size={16} /> Sparks
+        </button>
+      </div>
+
+      {profileTab === "posts" ? (
+        <div className="py-8 text-center text-slate-500 text-xs">
+          Your shared posts are displayed directly on the main feed.
+        </div>
+      ) : (
+        <div className="py-12 text-center text-slate-500 text-xs">
+          <Zap size={32} className="mx-auto mb-2 opacity-40 text-amber-400" />
+          No Sparks uploaded yet.
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- MESSAGES VIEW WITH DYNAMIC SEARCH ---
 function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, onBack, onOpenAuth }) {
   const [messages, setMessages] = useState([]);
@@ -670,9 +1115,7 @@ function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, on
   const [recentConversations, setRecentConversations] = useState([]);
   const messagesEndRef = useRef(null);
 
-  const getConversationId = (userA, userB) => {
-    return [userA, userB].sort().join("_");
-  };
+  const getConversationId = (userA, userB) => [userA, userB].sort().join("_");
 
   const fetchRecentConversations = async () => {
     if (!currentUser || !currentHandle) return;
@@ -708,7 +1151,6 @@ function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, on
     fetchRecentConversations();
   }, [currentUser, currentHandle, activeChat]);
 
-  // Live profile search
   useEffect(() => {
     const handleSearch = async () => {
       const cleanQuery = searchQuery.trim().toLowerCase().replace("@", "");
@@ -742,7 +1184,6 @@ function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, on
     return () => clearTimeout(debounceTimer);
   }, [searchQuery, currentHandle]);
 
-  // Realtime subscription
   useEffect(() => {
     if (!activeChat || !currentUser) return;
 
@@ -756,9 +1197,7 @@ function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, on
         .eq("conversation_id", convId)
         .order("created_at", { ascending: true });
 
-      if (!error && data) {
-        setMessages(data);
-      }
+      if (!error && data) setMessages(data);
       setLoadingChat(false);
     };
 
@@ -775,17 +1214,12 @@ function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, on
           filter: `conversation_id=eq.${convId}`,
         },
         (payload) => {
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === payload.new.id)) return prev;
-            return [...prev, payload.new];
-          });
+          setMessages((prev) => (prev.some((m) => m.id === payload.new.id) ? prev : [...prev, payload.new]));
         }
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => supabase.removeChannel(channel);
   }, [activeChat, currentUser, currentHandle]);
 
   useEffect(() => {
@@ -798,10 +1232,9 @@ function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, on
 
     const messageText = inputText.trim();
     setInputText("");
-
     const convId = getConversationId(currentHandle, activeChat.userId);
 
-    const { error } = await supabase.from("messages").insert([
+    await supabase.from("messages").insert([
       {
         conversation_id: convId,
         sender_handle: currentHandle,
@@ -809,10 +1242,6 @@ function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, on
         content: messageText,
       },
     ]);
-
-    if (error) {
-      console.error("Error sending message:", error.message);
-    }
   };
 
   if (!currentUser) {
@@ -820,9 +1249,7 @@ function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, on
       <div className="py-20 text-center flex flex-col items-center gap-3">
         <Mail size={36} className="text-amber-400 opacity-60" />
         <h3 className="text-sm font-bold">Sign In to Send Messages</h3>
-        <p className="text-xs text-slate-400 max-w-xs">
-          Search creators and chat in real-time.
-        </p>
+        <p className="text-xs text-slate-400 max-w-xs">Search creators and chat in real-time.</p>
         <button
           onClick={onOpenAuth}
           className="mt-2 px-5 py-2 bg-amber-500 text-black font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20"
@@ -875,10 +1302,7 @@ function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, on
                   </div>
                   <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-500">
                     <span>
-                      {new Date(msg.created_at).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </span>
                     {isMe && <CheckCheck size={11} className="text-amber-500" />}
                   </div>
@@ -911,7 +1335,6 @@ function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, on
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Search Bar */}
       <div className="relative">
         <Search size={16} className="absolute left-3.5 top-3 text-slate-500" />
         <input
@@ -921,9 +1344,7 @@ function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, on
           placeholder="Search by @handle to start a DM..."
           className="w-full bg-slate-900/60 border border-slate-800 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500"
         />
-        {isSearching && (
-          <Loader2 size={15} className="absolute right-3.5 top-3 animate-spin text-amber-400" />
-        )}
+        {isSearching && <Loader2 size={15} className="absolute right-3.5 top-3 animate-spin text-amber-400" />}
       </div>
 
       {searchQuery.trim() ? (
@@ -935,10 +1356,7 @@ function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, on
             searchResults.map((user) => (
               <div
                 key={user.userId}
-                onClick={() => {
-                  onSelectChat(user);
-                  setSearchQuery("");
-                }}
+                onClick={() => { onSelectChat(user); setSearchQuery(""); }}
                 className="bg-slate-900/60 hover:bg-slate-900 border border-slate-800/80 p-3 rounded-2xl flex items-center gap-3 cursor-pointer transition-all active:scale-[0.99]"
               >
                 <img src={user.avatar} className="w-10 h-10 rounded-full object-cover border border-slate-800" />
@@ -985,7 +1403,7 @@ function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, on
 }
 
 // --- SPARK CARD ---
-function SparkCard({ spark, onLikeSpark, heightClass = "h-[580px]" }) {
+function SparkCard({ spark, heightClass = "h-[580px]" }) {
   const videoRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(true);
@@ -1021,13 +1439,6 @@ function SparkCard({ spark, onLikeSpark, heightClass = "h-[580px]" }) {
     }
   };
 
-  const handleLike = (e) => {
-    e.stopPropagation();
-    const nextLiked = !liked;
-    setLiked(nextLiked);
-    onLikeSpark(spark.id, spark.likes_count || 0, liked);
-  };
-
   return (
     <div className={`relative w-full ${heightClass} snap-start bg-slate-950 flex items-center justify-center overflow-hidden`}>
       <video
@@ -1041,17 +1452,14 @@ function SparkCard({ spark, onLikeSpark, heightClass = "h-[580px]" }) {
       />
 
       <button
-        onClick={(e) => {
-          e.stopPropagation();
-          setIsMuted(!isMuted);
-        }}
+        onClick={(e) => { e.stopPropagation(); setIsMuted(!isMuted); }}
         className="absolute top-4 right-4 p-2 bg-black/50 backdrop-blur-md rounded-full text-white/90 hover:text-white z-10"
       >
         {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
       </button>
 
       <div className="absolute right-3 bottom-12 z-10 flex flex-col items-center gap-5">
-        <button onClick={handleLike} className="flex flex-col items-center gap-1 group">
+        <button onClick={() => setLiked(!liked)} className="flex flex-col items-center gap-1 group">
           <div className={`p-2.5 rounded-full bg-black/40 backdrop-blur-md transition-transform group-hover:scale-110 ${liked ? "text-rose-500" : "text-white"}`}>
             <Heart size={22} className={liked ? "fill-rose-500" : ""} />
           </div>
@@ -1106,18 +1514,12 @@ function UploadSparkModal({ onClose, onSubmit }) {
     setIsUploading(true);
     try {
       const fileExt = selectedFile.name.split(".").pop();
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-      const filePath = `${fileName}`;
+      const fileName = `${Date.now()}.${fileExt}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("sparks-media")
-        .upload(filePath, selectedFile);
-
+      const { error: uploadError } = await supabase.storage.from("sparks-media").upload(fileName, selectedFile);
       if (uploadError) throw uploadError;
 
-      const { data: publicUrlData } = supabase.storage
-        .from("sparks-media")
-        .getPublicUrl(filePath);
+      const { data: publicUrlData } = supabase.storage.from("sparks-media").getPublicUrl(fileName);
 
       await onSubmit({
         videoUrl: publicUrlData.publicUrl,
@@ -1125,7 +1527,6 @@ function UploadSparkModal({ onClose, onSubmit }) {
         songTitle: songTitle.trim() || "Original Audio",
       });
     } catch (err) {
-      console.error("Upload error:", err.message);
       alert("Failed to upload video: " + err.message);
     } finally {
       setIsUploading(false);
@@ -1144,13 +1545,7 @@ function UploadSparkModal({ onClose, onSubmit }) {
         </h3>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <input
-            type="file"
-            accept="video/*"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            className="hidden"
-          />
+          <input type="file" accept="video/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
 
           {!previewUrl ? (
             <div
@@ -1165,10 +1560,7 @@ function UploadSparkModal({ onClose, onSubmit }) {
               <video src={previewUrl} className="w-full h-full object-cover" muted loop autoPlay />
               <button
                 type="button"
-                onClick={() => {
-                  setSelectedFile(null);
-                  setPreviewUrl(null);
-                }}
+                onClick={() => { setSelectedFile(null); setPreviewUrl(null); }}
                 className="absolute top-2 right-2 p-1.5 bg-black/70 hover:bg-black text-white rounded-full transition-colors"
               >
                 <X size={14} />
@@ -1198,164 +1590,10 @@ function UploadSparkModal({ onClose, onSubmit }) {
               disabled={isUploading || !selectedFile}
               className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black text-xs font-bold flex items-center gap-1.5 shadow-md shadow-amber-500/20"
             >
-              {isUploading ? (
-                <>
-                  <Loader2 size={13} className="animate-spin" /> Uploading Video...
-                </>
-              ) : (
-                <>
-                  <Video size={13} /> Publish Spark
-                </>
-              )}
+              {isUploading ? <><Loader2 size={13} className="animate-spin" /> Uploading...</> : <><Video size={13} /> Publish Spark</>}
             </button>
           </div>
         </form>
-      </div>
-    </div>
-  );
-}
-
-// --- AUTH MODAL ---
-function AuthModal({ onClose }) {
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [handle, setHandle] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
-
-  const handleAuthSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setErrorMsg("");
-
-    try {
-      if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              handle: handle.toLowerCase().replace(/[^a-z0-9_]/g, "") || email.split("@")[0],
-              full_name: fullName || "Social Nest User",
-            },
-          },
-        });
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (error) throw error;
-      }
-      onClose();
-    } catch (err) {
-      setErrorMsg(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative">
-        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white">
-          <X size={20} />
-        </button>
-
-        <h3 className="text-lg font-bold text-white mb-1">
-          {isSignUp ? "Create an account" : "Welcome back"}
-        </h3>
-        <p className="text-xs text-slate-400 mb-5">
-          {isSignUp
-            ? "Sign up to post, like, comment, and chat."
-            : "Sign in with your email and password to continue."}
-        </p>
-
-        {errorMsg && (
-          <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs rounded-xl">
-            {errorMsg}
-          </div>
-        )}
-
-        <form onSubmit={handleAuthSubmit} className="flex flex-col gap-3">
-          {isSignUp && (
-            <>
-              <div>
-                <label className="text-[11px] font-semibold text-slate-400 block mb-1">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="e.g. Alex Rivera"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-                />
-              </div>
-              <div>
-                <label className="text-[11px] font-semibold text-slate-400 block mb-1">Handle</label>
-                <input
-                  type="text"
-                  required
-                  value={handle}
-                  onChange={(e) => setHandle(e.target.value)}
-                  placeholder="e.g. alex_rivera"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-                />
-              </div>
-            </>
-          )}
-
-          <div>
-            <label className="text-[11px] font-semibold text-slate-400 block mb-1">Email</label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@domain.com"
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-            />
-          </div>
-
-          <div>
-            <label className="text-[11px] font-semibold text-slate-400 block mb-1">Password</label>
-            <input
-              type="password"
-              required
-              minLength={6}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full mt-2 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {loading && <Loader2 size={14} className="animate-spin" />}
-            {isSignUp ? "Sign Up" : "Sign In"}
-          </button>
-        </form>
-
-        <div className="mt-5 text-center">
-          <button
-            onClick={() => {
-              setIsSignUp(!isSignUp);
-              setErrorMsg("");
-            }}
-            className="text-xs text-slate-400 hover:text-amber-400 transition-colors"
-          >
-            {isSignUp
-              ? "Already have an account? Sign in"
-              : "Don't have an account? Sign up"}
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -1448,19 +1686,12 @@ function CreatePostModal({ onClose, onSubmit }) {
     try {
       if (postType === "media" && selectedFile) {
         const fileExt = selectedFile.name.split(".").pop();
-        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-        const filePath = `${fileName}`;
+        const fileName = `${Date.now()}.${fileExt}`;
 
-        const { error: uploadError } = await supabase.storage
-          .from("post-media")
-          .upload(filePath, selectedFile);
-
+        const { error: uploadError } = await supabase.storage.from("post-media").upload(fileName, selectedFile);
         if (uploadError) throw uploadError;
 
-        const { data: publicUrlData } = supabase.storage
-          .from("post-media")
-          .getPublicUrl(filePath);
-
+        const { data: publicUrlData } = supabase.storage.from("post-media").getPublicUrl(fileName);
         uploadedMediaUrl = publicUrlData.publicUrl;
       }
 
@@ -1470,7 +1701,6 @@ function CreatePostModal({ onClose, onSubmit }) {
         mediaUrl: uploadedMediaUrl,
       });
     } catch (err) {
-      console.error("Upload error:", err.message);
       alert("Failed to upload image: " + err.message);
     } finally {
       setIsUploading(false);
@@ -1489,23 +1719,15 @@ function CreatePostModal({ onClose, onSubmit }) {
         <div className="flex gap-2 mb-4">
           <button
             type="button"
-            onClick={() => {
-              setPostType("text");
-              setSelectedFile(null);
-              setPreviewUrl(null);
-            }}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-              postType === "text" ? "bg-white text-slate-950" : "bg-slate-800 text-slate-400 hover:text-white"
-            }`}
+            onClick={() => { setPostType("text"); setSelectedFile(null); setPreviewUrl(null); }}
+            className={`flex-1 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${postType === "text" ? "bg-white text-slate-950" : "bg-slate-800 text-slate-400 hover:text-white"}`}
           >
             <MessageSquare size={14} /> Thought
           </button>
           <button
             type="button"
             onClick={() => setPostType("media")}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-              postType === "media" ? "bg-white text-slate-950" : "bg-slate-800 text-slate-400 hover:text-white"
-            }`}
+            className={`flex-1 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${postType === "media" ? "bg-white text-slate-950" : "bg-slate-800 text-slate-400 hover:text-white"}`}
           >
             <ImageIcon size={14} /> Photo
           </button>
@@ -1516,24 +1738,13 @@ function CreatePostModal({ onClose, onSubmit }) {
             rows={3}
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder={
-              postType === "text"
-                ? "What's happening? Share a thought, debate, or hot take..."
-                : "Write a caption for your photo..."
-            }
+            placeholder={postType === "text" ? "What's happening? Share a thought..." : "Write a caption for your photo..."}
             className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500 resize-none"
           />
 
           {postType === "media" && (
             <div>
-              <input
-                type="file"
-                accept="image/*"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                className="hidden"
-              />
-
+              <input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
               {!previewUrl ? (
                 <div
                   onClick={() => fileInputRef.current?.click()}
@@ -1547,10 +1758,7 @@ function CreatePostModal({ onClose, onSubmit }) {
                   <img src={previewUrl} alt="Preview" className="w-full h-full object-cover max-h-48" />
                   <button
                     type="button"
-                    onClick={() => {
-                      setSelectedFile(null);
-                      setPreviewUrl(null);
-                    }}
+                    onClick={() => { setSelectedFile(null); setPreviewUrl(null); }}
                     className="absolute top-2 right-2 p-1.5 bg-black/70 hover:bg-black text-white rounded-full transition-colors"
                   >
                     <X size={14} />
@@ -1567,15 +1775,7 @@ function CreatePostModal({ onClose, onSubmit }) {
               disabled={isUploading || (!content.trim() && !selectedFile)}
               className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black text-xs font-bold flex items-center gap-1.5 shadow-md shadow-amber-500/20"
             >
-              {isUploading ? (
-                <>
-                  <Loader2 size={13} className="animate-spin" /> Uploading...
-                </>
-              ) : (
-                <>
-                  <Send size={13} /> Post
-                </>
-              )}
+              {isUploading ? <><Loader2 size={13} className="animate-spin" /> Uploading...</> : <><Send size={13} /> Post</>}
             </button>
           </div>
         </form>
@@ -1584,110 +1784,138 @@ function CreatePostModal({ onClose, onSubmit }) {
   );
 }
 
-// --- PROFILE VIEW ---
-function ProfileView({ user, currentUser, onOpenAuth }) {
-  const [profileTab, setProfileTab] = useState("posts");
+// --- AUTH MODAL ---
+function AuthModal({ onClose }) {
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [handle, setHandle] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setErrorMsg("");
+
+    try {
+      if (isSignUp) {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              handle: handle.toLowerCase().replace(/[^a-z0-9_]/g, "") || email.split("@")[0],
+              full_name: fullName || "Social Nest User",
+            },
+          },
+        });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      }
+      onClose();
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="bg-slate-900/50 border border-slate-800/80 rounded-2xl p-5 shadow-lg">
-        <div className="flex items-center justify-between">
-          <img
-            src={user.avatar}
-            alt=""
-            className="w-20 h-20 rounded-full object-cover border-2 border-amber-500/50 p-0.5"
-          />
-          <div className="flex gap-6 text-center">
-            <div>
-              <p className="font-bold text-base">{user.stats.posts}</p>
-              <p className="text-[11px] text-slate-400">Posts</p>
-            </div>
-            <div>
-              <p className="font-bold text-base">{user.stats.followers}</p>
-              <p className="text-[11px] text-slate-400">Followers</p>
-            </div>
-            <div>
-              <p className="font-bold text-base">{user.stats.following}</p>
-              <p className="text-[11px] text-slate-400">Following</p>
-            </div>
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative">
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white">
+          <X size={20} />
+        </button>
+
+        <h3 className="text-lg font-bold text-white mb-1">
+          {isSignUp ? "Create an account" : "Welcome back"}
+        </h3>
+        <p className="text-xs text-slate-400 mb-5">
+          {isSignUp ? "Sign up to post, like, comment, and chat." : "Sign in with your email and password to continue."}
+        </p>
+
+        {errorMsg && (
+          <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs rounded-xl">
+            {errorMsg}
           </div>
-        </div>
+        )}
 
-        <div className="mt-4">
-          <h2 className="font-bold text-sm">{user.name}</h2>
-          <p className="text-xs text-amber-400">@{user.handle}</p>
-          <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">{user.bio}</p>
-        </div>
-
-        <div className="flex gap-2.5 mt-4">
-          {currentUser ? (
+        <form onSubmit={handleAuthSubmit} className="flex flex-col gap-3">
+          {isSignUp && (
             <>
-              <button className="flex-1 bg-white text-slate-950 font-semibold text-xs py-2 rounded-xl active:scale-[0.98] transition-transform">
-                Edit Profile
-              </button>
-              <button
-                onClick={handleSignOut}
-                className="px-3.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-semibold text-xs py-2 rounded-xl flex items-center gap-1.5 transition-colors"
-              >
-                <LogOut size={14} /> Log Out
-              </button>
+              <div>
+                <label className="text-[11px] font-semibold text-slate-400 block mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="e.g. Alex Rivera"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold text-slate-400 block mb-1">Handle</label>
+                <input
+                  type="text"
+                  required
+                  value={handle}
+                  onChange={(e) => setHandle(e.target.value)}
+                  placeholder="e.g. alex_rivera"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
             </>
-          ) : (
-            <button
-              onClick={onOpenAuth}
-              className="flex-1 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs py-2.5 rounded-xl shadow-lg shadow-amber-500/20 transition-all"
-            >
-              Sign In to Your Account
-            </button>
           )}
+
+          <div>
+            <label className="text-[11px] font-semibold text-slate-400 block mb-1">Email</label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@domain.com"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-semibold text-slate-400 block mb-1">Password</label>
+            <input
+              type="password"
+              required
+              minLength={6}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full mt-2 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {loading && <Loader2 size={14} className="animate-spin" />}
+            {isSignUp ? "Sign Up" : "Sign In"}
+          </button>
+        </form>
+
+        <div className="mt-5 text-center">
+          <button
+            onClick={() => { setIsSignUp(!isSignUp); setErrorMsg(""); }}
+            className="text-xs text-slate-400 hover:text-amber-400 transition-colors"
+          >
+            {isSignUp ? "Already have an account? Sign in" : "Don't have an account? Sign up"}
+          </button>
         </div>
       </div>
-
-      <div className="flex border-b border-slate-800">
-        <button
-          onClick={() => setProfileTab("posts")}
-          className={`flex-1 py-2.5 flex justify-center items-center gap-2 text-xs font-semibold border-b-2 transition-all ${
-            profileTab === "posts"
-              ? "border-amber-400 text-amber-400"
-              : "border-transparent text-slate-500 hover:text-slate-300"
-          }`}
-        >
-          <Grid size={16} /> Posts
-        </button>
-        <button
-          onClick={() => setProfileTab("sparks")}
-          className={`flex-1 py-2.5 flex justify-center items-center gap-2 text-xs font-semibold border-b-2 transition-all ${
-            profileTab === "sparks"
-              ? "border-amber-400 text-amber-400"
-              : "border-transparent text-slate-500 hover:text-slate-300"
-          }`}
-        >
-          <Film size={16} /> Sparks
-        </button>
-      </div>
-
-      {profileTab === "posts" ? (
-        <div className="grid grid-cols-3 gap-1.5 rounded-xl overflow-hidden">
-          {user.posts.map((imgUrl, i) => (
-            <div key={i} className="aspect-square bg-slate-900 group relative overflow-hidden">
-              <img
-                src={imgUrl}
-                alt=""
-                className="w-full h-full object-cover transition-transform group-hover:scale-105"
-              />
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="py-12 text-center text-slate-500 text-xs">
-          <Zap size={32} className="mx-auto mb-2 opacity-40 text-amber-400" />
-          No Sparks uploaded yet.
-        </div>
-      )}
     </div>
   );
 }
@@ -1736,9 +1964,7 @@ function StoryViewerModal({ stories, initialIndex, onClose }) {
             <div key={i} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden">
               <div
                 className="h-full bg-white transition-all duration-75"
-                style={{
-                  width: i === currentIndex ? `${progress}%` : i < currentIndex ? "100%" : "0%",
-                }}
+                style={{ width: i === currentIndex ? `${progress}%` : i < currentIndex ? "100%" : "0%" }}
               />
             </div>
           ))}
@@ -1764,23 +1990,11 @@ function StoryViewerModal({ stories, initialIndex, onClose }) {
 
         <div
           className="absolute left-0 top-16 bottom-0 w-1/3 z-10 cursor-pointer"
-          onClick={() => {
-            if (currentIndex > 0) {
-              setCurrentIndex((i) => i - 1);
-              setProgress(0);
-            }
-          }}
+          onClick={() => { if (currentIndex > 0) { setCurrentIndex((i) => i - 1); setProgress(0); } }}
         />
         <div
           className="absolute right-0 top-16 bottom-0 w-2/3 z-10 cursor-pointer"
-          onClick={() => {
-            if (currentIndex < stories.length - 1) {
-              setCurrentIndex((i) => i + 1);
-              setProgress(0);
-            } else {
-              onClose();
-            }
-          }}
+          onClick={() => { if (currentIndex < stories.length - 1) { setCurrentIndex((i) => i + 1); setProgress(0); } else { onClose(); } }}
         />
       </div>
     </div>
