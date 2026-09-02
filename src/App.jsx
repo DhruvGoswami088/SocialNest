@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabaseClient";
-import { playHapticSFX, getAdaptiveProfile } from "./utils/sfx";
 import {
   X,
   Bell,
@@ -42,6 +41,7 @@ import {
   Moon,
   ChevronDown,
   Lock,
+  Globe,
   Eye,
   Sparkles,
   Play,
@@ -55,10 +55,62 @@ import {
   Copy,
   Check,
   Wifi,
-  ShieldCheck
+  ShieldCheck,
+  Info,
+  Layers,
+  Award
 } from "lucide-react";
 
-// --- BRANDED INFINITE SN MONOGRAM LOGO ---
+// --- WEB AUDIO API CHIMES ---
+function playHapticSFX(type, enabled = true) {
+  if (!enabled) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    const now = ctx.currentTime;
+    if (type === "send") {
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(540, now);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.12);
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+      osc.start(now);
+      osc.stop(now + 0.15);
+    } else if (type === "receive") {
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.exponentialRampToValueAtTime(1100, now + 0.08);
+      osc.frequency.exponentialRampToValueAtTime(660, now + 0.18);
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+      osc.start(now);
+      osc.stop(now + 0.22);
+    } else if (type === "upload") {
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.1);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.25);
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      osc.start(now);
+      osc.stop(now + 0.32);
+    } else if (type === "like") {
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(320, now);
+      osc.frequency.exponentialRampToValueAtTime(580, now + 0.1);
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+      osc.start(now);
+      osc.stop(now + 0.14);
+    }
+  } catch (e) {}
+}
+
+// --- APP LOGO (HEADER & SPLASH ONLY) ---
 function BrandLogo({ className = "w-8 h-8", animated = false }) {
   return (
     <svg
@@ -88,6 +140,29 @@ function BrandLogo({ className = "w-8 h-8", animated = false }) {
       />
     </svg>
   );
+}
+
+// --- INSTAGRAM-STYLE DEFAULT USER PROFILE AVATAR ---
+function DefaultAvatar({ className = "w-10 h-10" }) {
+  return (
+    <div className={`${className} rounded-full bg-[#3D3C42] border border-white/10 flex items-center justify-center overflow-hidden shrink-0 shadow-inner select-none`}>
+      <svg
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        className="w-3/5 h-3/5 text-[#A0A0A5] translate-y-1"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path d="M12 12C14.21 12 16 10.21 16 8C16 5.79 14.21 4 12 4C9.79 4 8 5.79 8 8C8 10.21 9.79 12 12 12ZM12 14C9.33 14 4 15.34 4 18V20H20V18C20 15.34 14.67 14 12 14Z" />
+      </svg>
+    </div>
+  );
+}
+
+function UserAvatar({ src, className = "w-10 h-10", alt = "" }) {
+  if (!src || src.trim() === "" || src.includes("placeholder") || src.includes("unsplash")) {
+    return <DefaultAvatar className={className} />;
+  }
+  return <img src={src} className={`${className} rounded-full object-cover shrink-0`} alt={alt} />;
 }
 
 function BrandLoader({ message = "Loading Social Nest..." }) {
@@ -121,26 +196,26 @@ const STORY_MODES = {
   normal: { label: "Sparks", color: "from-[#F58F7C] via-[#F2C4CE] to-[#4F4F51]", icon: Zap, duration: 5000 },
 };
 
-const SAMPLE_STORIES = [
+const OFFICIAL_TEST_STORIES = [
   {
     id: "s1",
-    username: "alex_dev",
-    userAvatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
+    username: "test_creator_1",
+    userAvatar: null,
     mediaUrl: "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800",
     audioUrl: "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=lofi-study-112191.mp3",
     audioTitle: "Lofi Study Beats • Nest Sounds",
     category: "announcement",
-    caption: "🚀 Adaptive 4K/720p engine & Direct Spark DM live!",
+    caption: "🚀 Official Test Account #1: Testing Vaults & Clean Avatars!",
   },
   {
     id: "s2",
-    username: "sarah_m",
-    userAvatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150",
+    username: "test_creator_2",
+    userAvatar: null,
     mediaUrl: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800",
     audioUrl: "https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3?filename=chill-abstract-intention-12099.mp3",
     audioTitle: "Chill Urban Sunset • RetroWave",
     category: "routine",
-    caption: "Morning coffee & ocean walk ☕🌊",
+    caption: "Official Test Account #2: Adaptive media & video direct cards! ☕🌊",
   },
 ];
 
@@ -151,6 +226,8 @@ export default function App() {
 
   // Settings & Theme
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [dataSaverEnabled, setDataSaverEnabled] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -180,9 +257,9 @@ export default function App() {
   const [isStudioOpen, setIsStudioOpen] = useState(false);
   const [isUploadSparkOpen, setIsUploadSparkOpen] = useState(false);
 
-  // Spark Sharing Sheets
-  const [sparkForwardTarget, setSparkForwardTarget] = useState(null); // Spark to send via DM
-  const [sparkShareModal, setSparkShareModal] = useState(null);       // Spark 3-dots share drawer
+  // Spark Sharing Drawers
+  const [sparkForwardTarget, setSparkForwardTarget] = useState(null);
+  const [sparkShareModal, setSparkShareModal] = useState(null);
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -199,9 +276,11 @@ export default function App() {
           id: userId,
           handle: userMetadata?.handle || email?.split("@")[0] || "user",
           full_name: userMetadata?.full_name || "SocialNest Creator",
-          avatar_url: userMetadata?.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300",
+          avatar_url: null,
           banner_url: null,
           bio: "Exploring Social Nest 🚀",
+          is_private: false,
+          account_type: "creator"
         });
       }
     } catch (e) {
@@ -229,7 +308,7 @@ export default function App() {
   }, []);
 
   const currentHandle = profile?.handle || (currentUser ? currentUser.email.split("@")[0] : "guest");
-  const currentAvatar = profile?.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300";
+  const currentAvatar = profile?.avatar_url || null;
   const currentBanner = profile?.banner_url || null;
 
   const fetchUserEngagements = async () => {
@@ -262,17 +341,17 @@ export default function App() {
     const channel = supabase
       .channel("notif_msg_channel")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `recipient_handle=eq.${currentHandle}` }, (p) => {
-        playHapticSFX("receive");
+        playHapticSFX("receive", soundEnabled);
         setNotifications((prev) => [p.new, ...prev]);
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `recipient_handle=eq.${currentHandle}` }, () => {
-        playHapticSFX("receive");
+        playHapticSFX("receive", soundEnabled);
         setUnreadMsgCount((c) => c + 1);
       })
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  }, [currentHandle, currentUser]);
+  }, [currentHandle, currentUser, soundEnabled]);
 
   const fetchPosts = async () => {
     try {
@@ -284,15 +363,15 @@ export default function App() {
         id: p.id,
         type: p.post_type,
         username: p.user_handle,
-        userAvatar: p.user_avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
+        userAvatar: p.user_avatar,
         timeAgo: new Date(p.created_at).toLocaleDateString([], { month: "short", day: "numeric" }),
         content: p.content,
         mediaUrl: p.media_url,
         likes: p.likes_count || 0,
+        visibility: p.visibility || "public",
         audioTitle: p.audio_title,
         audioUrl: p.audio_url,
         filterStyle: p.filter_style,
-        reposts: 0,
         comments: (p.comments || []).map((c) => ({ id: c.id, user: c.user_handle, text: c.content })),
       }));
       setPosts(formatted);
@@ -313,6 +392,7 @@ export default function App() {
 
       const enriched = (sparkData || []).map((s) => ({
         ...s,
+        visibility: s.visibility || "public",
         comments: (commentData || []).filter((c) => c.spark_id === String(s.id)).map((c) => ({
           id: c.id,
           user: c.user_handle,
@@ -337,7 +417,7 @@ export default function App() {
 
   const handleAddNewPost = async (newPost) => {
     try {
-      playHapticSFX("upload");
+      playHapticSFX("upload", soundEnabled);
       const { error } = await supabase.from("posts").insert([
         {
           user_handle: currentHandle,
@@ -345,6 +425,7 @@ export default function App() {
           content: newPost.content,
           media_url: newPost.mediaUrl,
           post_type: newPost.type,
+          visibility: newPost.visibility || "public",
           audio_title: newPost.audioTitle || null,
           audio_url: newPost.audioUrl || null,
           filter_style: newPost.filterStyle || "normal",
@@ -354,6 +435,7 @@ export default function App() {
       if (error) throw error;
       fetchPosts();
       setIsStudioOpen(false);
+      showToast(newPost.visibility === "followers" ? "🔒 Shared to Followers Only (Vault)" : "🌐 Published to Public Explore!");
     } catch (err) {
       alert("Failed to post: " + err.message);
     }
@@ -382,7 +464,7 @@ export default function App() {
     });
 
     setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, likes: updatedCount } : p)));
-    playHapticSFX("like");
+    playHapticSFX("like", soundEnabled);
 
     try {
       if (isAlreadyLiked) {
@@ -454,7 +536,7 @@ export default function App() {
         setSparks((prev) => prev.map((s) => (s.id === target.item.id ? { ...s, comments: [...(s.comments || []), created] } : s)));
         setActiveCommentTarget((prev) => prev ? { ...prev, item: { ...prev.item, comments: [...(prev.item.comments || []), created] } } : null);
       }
-      playHapticSFX("send");
+      playHapticSFX("send", soundEnabled);
     } catch (err) {
       console.error("Error adding comment:", err);
     }
@@ -472,7 +554,7 @@ export default function App() {
     }
   };
 
-  const handleInitiateDirectMessage = (targetHandle, targetAvatar) => {
+  const handleInitiateDirectMessage = (targetHandle) => {
     if (targetHandle === currentHandle) {
       showToast("You cannot message yourself.");
       return;
@@ -487,12 +569,11 @@ export default function App() {
     setActiveChat({
       userId: targetHandle,
       username: targetHandle,
-      avatar: targetAvatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
+      avatar: null,
     });
     setActiveTab("messages");
   };
 
-  // Forward Spark directly into friend's DM
   const handleForwardSparkToFriend = async (friendHandle, sparkItem) => {
     const convId = [currentHandle, friendHandle].sort().join("_");
     const payload = `🔥 Shared a Spark: ${sparkItem.caption || "Watch clip"} - ${sparkItem.video_url}`;
@@ -500,7 +581,7 @@ export default function App() {
     await supabase.from("messages").insert([
       { conversation_id: convId, sender_handle: currentHandle, recipient_handle: friendHandle, content: payload, is_read: false }
     ]);
-    playHapticSFX("send");
+    playHapticSFX("send", soundEnabled);
     setSparkForwardTarget(null);
     showToast(`Sent to @${friendHandle}!`);
   };
@@ -515,10 +596,12 @@ export default function App() {
       } else {
         setViewedUserProfile({
           handle: targetHandle,
-          full_name: targetHandle,
-          avatar_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300",
+          full_name: targetHandle.startsWith("test_") ? `Official Test Account (${targetHandle})` : targetHandle,
+          avatar_url: null,
           banner_url: null,
-          bio: "Social Nest Creator",
+          bio: targetHandle.startsWith("test_") ? "Official Social Nest Sandbox Creator" : "Creator on Social Nest",
+          is_private: false,
+          account_type: "creator",
           posts: targetPosts,
         });
       }
@@ -528,7 +611,14 @@ export default function App() {
   };
 
   const displayedPosts = posts.filter((p) => {
-    if (feedFilter === "following" && !followingHandles.includes(p.username) && p.username !== currentHandle) {
+    const isOwner = p.username === currentHandle;
+    const isFollower = followingHandles.includes(p.username);
+
+    if (p.visibility === "followers" && !isOwner && !isFollower) {
+      return false;
+    }
+
+    if (feedFilter === "following" && !isFollower && !isOwner) {
       return false;
     }
     if (searchFilterTag && !p.content?.toLowerCase().includes(`#${searchFilterTag.toLowerCase()}`)) {
@@ -617,12 +707,12 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Views */}
+      {/* Main Content Area */}
       <main className="w-full max-w-md px-3 pt-2">
         {activeTab === "home" && (
           <HomeView
             isDarkMode={isDarkMode}
-            stories={SAMPLE_STORIES}
+            stories={OFFICIAL_TEST_STORIES}
             feedFilter={feedFilter}
             searchFilterTag={searchFilterTag}
             setSearchFilterTag={setSearchFilterTag}
@@ -646,6 +736,8 @@ export default function App() {
           <SearchView
             isDarkMode={isDarkMode}
             posts={posts}
+            followingHandles={followingHandles}
+            currentHandle={currentHandle}
             searchQuery={feedSearchQuery}
             setSearchQuery={setFeedSearchQuery}
             searchTag={searchFilterTag}
@@ -712,6 +804,8 @@ export default function App() {
               avatar: currentAvatar,
               banner: currentBanner,
               bio: profile?.bio || "Exploring Social Nest 🚀",
+              is_private: profile?.is_private || false,
+              account_type: profile?.account_type || "creator",
               stats: {
                 posts: posts.filter((p) => p.username === currentHandle).length,
                 following: followingHandles.length,
@@ -771,14 +865,15 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Target User Profile Modal */}
+      {/* USER PROFILE MODAL (OVERFLOW UNCLIPPED & LAYER FIX) */}
       {viewedUserProfile && (
         <UserProfileModal
           isDarkMode={isDarkMode}
           profile={viewedUserProfile}
           isFollowing={followingHandles.includes(viewedUserProfile.handle)}
+          currentHandle={currentHandle}
           onToggleFollow={() => handleToggleFollow(viewedUserProfile.handle)}
-          onDirectMessage={() => handleInitiateDirectMessage(viewedUserProfile.handle, viewedUserProfile.avatar_url)}
+          onDirectMessage={() => handleInitiateDirectMessage(viewedUserProfile.handle)}
           onClose={() => setViewedUserProfile(null)}
           onSelectPost={(post) => {
             setViewedUserProfile(null);
@@ -787,7 +882,7 @@ export default function App() {
         />
       )}
 
-      {/* Spark Quick Direct Message Forward Drawer */}
+      {/* Spark 1-Tap DM Forward Drawer */}
       {sparkForwardTarget && (
         <SparkForwardDrawer
           spark={sparkForwardTarget}
@@ -808,7 +903,7 @@ export default function App() {
         />
       )}
 
-      {/* Studio Camera & Video Recorder Modal */}
+      {/* Studio Camera & Selective Audience Modal */}
       {isStudioOpen && (
         <StudioCreatorModal
           isDarkMode={isDarkMode}
@@ -822,7 +917,16 @@ export default function App() {
         <SettingsModal
           isDarkMode={isDarkMode}
           setIsDarkMode={setIsDarkMode}
+          soundEnabled={soundEnabled}
+          setSoundEnabled={setSoundEnabled}
+          dataSaverEnabled={dataSaverEnabled}
+          setDataSaverEnabled={setDataSaverEnabled}
           currentProfile={profile}
+          onUpdateProfileSetting={async (key, val) => {
+            await supabase.from("profiles").update({ [key]: val }).eq("id", currentUser.id);
+            setProfile((p) => ({ ...p, [key]: val }));
+            showToast("Setting updated!");
+          }}
           onClose={() => setSettingsOpen(false)}
           onOpenEditProfile={() => { setSettingsOpen(false); setEditProfileOpen(true); }}
         />
@@ -838,6 +942,7 @@ export default function App() {
             await supabase.from("profiles").update(up).eq("id", currentUser.id);
             setProfile((p) => ({ ...p, ...up }));
             setEditProfileOpen(false);
+            showToast("Profile & banner updated!");
           }}
         />
       )}
@@ -871,7 +976,7 @@ export default function App() {
 
       {selectedStoryIndex !== null && (
         <StoryViewerModal
-          stories={SAMPLE_STORIES}
+          stories={OFFICIAL_TEST_STORIES}
           initialIndex={selectedStoryIndex}
           onClose={() => setSelectedStoryIndex(null)}
         />
@@ -1066,9 +1171,9 @@ function HomeView({
                 className="flex flex-col items-center gap-1.5 focus:outline-none flex-shrink-0 group"
               >
                 <div className={`p-[2.5px] rounded-full bg-gradient-to-tr ${mode.color} transition-all duration-300 group-hover:scale-105`}>
-                  <img src={story.userAvatar} className={`w-12 h-12 rounded-full object-cover border-2 ${isDarkMode ? "border-[#2C2B30]" : "border-white"}`} />
+                  <UserAvatar src={story.userAvatar} className="w-12 h-12 border-2 border-[#2C2B30]" />
                 </div>
-                <span className={`text-[11px] truncate max-w-[55px] ${isDarkMode ? "text-[#D6D6D6] group-hover:text-[#F58F7C]" : "text-slate-700 group-hover:text-[#F58F7C]"}`}>
+                <span className={`text-[11px] truncate max-w-[65px] ${isDarkMode ? "text-[#D6D6D6] group-hover:text-[#F58F7C]" : "text-slate-700 group-hover:text-[#F58F7C]"}`}>
                   {story.username}
                 </span>
               </button>
@@ -1110,14 +1215,13 @@ function HomeView({
   );
 }
 
-// --- ADAPTIVE HARDWARE/NETWORK GLASS VIDEO PLAYER ---
-function AdaptiveGlassPlayer({ src, audioUrl, isDarkMode, onDoubleTap }) {
+// --- GLASS VIDEO PLAYER ---
+function GlassVideoPlayer({ src, audioUrl, isDarkMode, onDoubleTap }) {
   const videoRef = useRef(null);
   const audioRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [progress, setProgress] = useState(0);
-  const [profile] = useState(() => getAdaptiveProfile());
   const [showHeartBurst, setShowHeartBurst] = useState(false);
   const lastTapRef = useRef(0);
 
@@ -1138,10 +1242,9 @@ function AdaptiveGlassPlayer({ src, audioUrl, isDarkMode, onDoubleTap }) {
     }
   };
 
-  const handleVideoTouch = (e) => {
+  const handleVideoTouch = () => {
     const now = Date.now();
     if (now - lastTapRef.current < 280) {
-      // Double Tap to Like
       setShowHeartBurst(true);
       if (onDoubleTap) onDoubleTap();
       setTimeout(() => setShowHeartBurst(false), 750);
@@ -1165,7 +1268,6 @@ function AdaptiveGlassPlayer({ src, audioUrl, isDarkMode, onDoubleTap }) {
         loop
         playsInline
         muted={isMuted}
-        preload={profile.preloadMode}
         onTimeUpdate={handleTimeUpdate}
         onClick={handleVideoTouch}
         className="w-full max-h-96 object-cover cursor-pointer"
@@ -1175,18 +1277,11 @@ function AdaptiveGlassPlayer({ src, audioUrl, isDarkMode, onDoubleTap }) {
         <audio ref={audioRef} src={audioUrl} loop muted={isMuted} />
       )}
 
-      {/* Double Tap Heart Burst Animation */}
       {showHeartBurst && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 animate-ping">
           <Heart size={72} className="fill-[#F58F7C] text-[#F58F7C] drop-shadow-2xl" />
         </div>
       )}
-
-      {/* Adaptive Quality Badge */}
-      <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md bg-black/50 backdrop-blur-md text-[10px] font-semibold text-[#D6D6D6] flex items-center gap-1 z-10">
-        <Wifi size={10} className="text-[#F58F7C]" />
-        <span>{profile.maxResolutionLabel}</span>
-      </div>
 
       {!isPlaying && (
         <div
@@ -1217,12 +1312,19 @@ function AdaptiveGlassPlayer({ src, audioUrl, isDarkMode, onDoubleTap }) {
 }
 
 // --- SEARCH VIEW ---
-function SearchView({ isDarkMode, posts, searchQuery, setSearchQuery, searchTag, setSearchTag, onSelectPost, onOpenUserProfile }) {
+function SearchView({ isDarkMode, posts, followingHandles, currentHandle, searchQuery, setSearchQuery, searchTag, setSearchTag, onSelectPost, onOpenUserProfile }) {
   const [searchMode, setSearchMode] = useState("media");
   const [searchedUsers, setSearchedUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
 
-  const mediaPosts = posts.filter((p) => p.mediaUrl && p.mediaUrl.trim() !== "");
+  const mediaPosts = posts.filter((p) => {
+    if (!p.mediaUrl || p.mediaUrl.trim() === "") return false;
+    const isOwner = p.username === currentHandle;
+    const isFollower = followingHandles.includes(p.username);
+    if (p.visibility === "followers" && !isOwner && !isFollower) return false;
+    return true;
+  });
+
   const filteredMedia = mediaPosts.filter((p) => {
     if (!searchQuery.trim() && !searchTag) return true;
     const q = searchQuery.toLowerCase();
@@ -1242,7 +1344,7 @@ function SearchView({ isDarkMode, posts, searchQuery, setSearchQuery, searchTag,
       const clean = searchQuery.trim().toLowerCase().replace("@", "");
       const { data } = await supabase
         .from("profiles")
-        .select("handle, full_name, avatar_url, banner_url, bio")
+        .select("handle, full_name, avatar_url, banner_url, bio, is_private, account_type")
         .or(`handle.ilike.%${clean}%,full_name.ilike.%${clean}%`)
         .limit(10);
 
@@ -1310,9 +1412,13 @@ function SearchView({ isDarkMode, posts, searchQuery, setSearchQuery, searchTag,
                   isDarkMode ? "bg-[#2C2B30] hover:bg-[#4F4F51]/40 border-[#4F4F51]" : "bg-white hover:bg-slate-100 border-[#D6D6D6]"
                 }`}
               >
-                <img src={u.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"} className="w-10 h-10 rounded-full object-cover border border-[#F2C4CE]/50" />
+                <UserAvatar src={u.avatar_url} className="w-10 h-10 border border-[#F2C4CE]/50" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold truncate text-[#D6D6D6]">{u.full_name || u.handle}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-bold truncate text-[#D6D6D6]">{u.full_name || u.handle}</p>
+                    {u.is_private && <Lock size={11} className="text-amber-400" />}
+                    {u.handle.startsWith("test_") && <Award size={11} className="text-[#F58F7C]" title="Official Test Account" />}
+                  </div>
                   <p className="text-[11px] text-[#F58F7C]">@{u.handle}</p>
                 </div>
                 <button className="px-3 py-1 rounded-xl bg-[#F58F7C]/15 border border-[#F58F7C]/30 text-[#F58F7C] text-xs font-bold">
@@ -1326,7 +1432,7 @@ function SearchView({ isDarkMode, posts, searchQuery, setSearchQuery, searchTag,
         <div className="grid grid-cols-3 gap-1 rounded-2xl overflow-hidden mt-1">
           {filteredMedia.length === 0 ? (
             <div className="col-span-3 py-16 text-center text-xs text-slate-500">
-              No media found matching "{searchQuery}".
+              No public media found matching "{searchQuery}".
             </div>
           ) : (
             filteredMedia.map((post) => (
@@ -1392,7 +1498,7 @@ function FormattedPostText({ text, onSelectTag, onOpenUserProfile, isDarkMode })
   );
 }
 
-// --- CLEAN FEED CARD WITH DOUBLE-TAP TO LIKE ---
+// --- FEED CARD ---
 function FeedCard({ post, isDarkMode, isLiked, isBookmarked, currentHandle, isFollowing, onToggleFollow, onDeletePost, onOpenComments, onLikePost, onToggleBookmark, onSelectTag, onOpenUserProfile }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showHeartBurst, setShowHeartBurst] = useState(false);
@@ -1414,10 +1520,15 @@ function FeedCard({ post, isDarkMode, isLiked, isBookmarked, currentHandle, isFo
     <div className={`py-4 border-b ${isDarkMode ? "border-[#4F4F51]" : "border-slate-200"} relative`}>
       <div className="flex items-center justify-between mb-2.5">
         <div className="flex items-center gap-2.5 cursor-pointer" onClick={onOpenUserProfile}>
-          <img src={post.userAvatar} className="w-9 h-9 rounded-full object-cover border border-[#F2C4CE]/40" />
+          <UserAvatar src={post.userAvatar} className="w-9 h-9 border border-[#F2C4CE]/40" />
           <div>
             <div className="flex items-center gap-2">
               <span className={`text-xs font-bold hover:underline ${isDarkMode ? "text-[#D6D6D6]" : "text-slate-900"}`}>@{post.username}</span>
+              {post.visibility === "followers" && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 flex items-center gap-0.5" title="Followers Only Vault">
+                  <Lock size={9} /> Vault
+                </span>
+              )}
               {!isOwner && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onToggleFollow(); }}
@@ -1470,7 +1581,7 @@ function FeedCard({ post, isDarkMode, isLiked, isBookmarked, currentHandle, isFo
           )}
 
           {isVideo ? (
-            <AdaptiveGlassPlayer src={post.mediaUrl} audioUrl={post.audioUrl} isDarkMode={isDarkMode} onDoubleTap={() => { if (!isLiked) onLikePost(); }} />
+            <GlassVideoPlayer src={post.mediaUrl} audioUrl={post.audioUrl} isDarkMode={isDarkMode} onDoubleTap={() => { if (!isLiked) onLikePost(); }} />
           ) : (
             <div className={`rounded-2xl overflow-hidden border ${isDarkMode ? "border-[#4F4F51] bg-black" : "border-slate-200 bg-slate-100"} flex items-center justify-center max-h-96 cursor-pointer`}>
               <img
@@ -1507,44 +1618,51 @@ function FeedCard({ post, isDarkMode, isLiked, isBookmarked, currentHandle, isFo
   );
 }
 
-// --- USER PROFILE MODAL ---
-function UserProfileModal({ isDarkMode, profile, isFollowing, onToggleFollow, onDirectMessage, onClose, onSelectPost }) {
+// --- FIXED USER PROFILE MODAL (NO MORE CUTOFF AVATAR) ---
+function UserProfileModal({ isDarkMode, profile, isFollowing, currentHandle, onToggleFollow, onDirectMessage, onClose, onSelectPost }) {
+  const isOwner = profile.handle === currentHandle;
+  const isPrivateLocked = profile.is_private && !isFollowing && !isOwner;
+
+  const visiblePosts = (profile.posts || []).filter((p) => {
+    if (isOwner || isFollowing) return true;
+    return p.visibility === "public";
+  });
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className={`w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl relative border max-h-[85vh] flex flex-col ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-[#D6D6D6]" : "bg-white border-[#D6D6D6] text-[#2C2B30]"}`}>
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 isolate">
+      <div className={`w-full max-w-sm rounded-3xl relative border shadow-2xl flex flex-col ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-[#D6D6D6]" : "bg-white border-[#D6D6D6] text-[#2C2B30]"}`}>
         
-        {/* Banner Section */}
-        <div className="h-32 w-full relative bg-gradient-to-r from-[#F58F7C] via-[#F2C4CE] to-[#4F4F51] shrink-0 z-0">
+        {/* Banner with Top Radius */}
+        <div className="h-32 w-full relative bg-gradient-to-r from-[#F58F7C] via-[#F2C4CE] to-[#4F4F51] rounded-t-3xl overflow-hidden shrink-0 z-0">
           {profile.banner_url && (
-            <img src={profile.banner_url} className="w-full h-full object-cover" />
+            <img src={profile.banner_url} className="w-full h-full object-cover" alt="Banner" />
           )}
           <button onClick={onClose} className="absolute top-3 right-3 p-1.5 rounded-full bg-black/60 text-white hover:bg-black/80 z-20">
             <X size={16} />
           </button>
         </div>
 
-        {/* Content Section: Avatar Elevated via relative z-20 */}
-        <div className="p-5 pt-0 flex-1 overflow-y-auto">
-          <div className="flex justify-between items-end -mt-11 mb-3 relative z-20">
-            <div className="p-1 rounded-full bg-[#2C2B30] border-2 border-[#F58F7C] shadow-lg">
-              <img
-                src={profile.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300"}
-                className="w-20 h-20 rounded-full object-cover"
-              />
+        {/* Profile Info Container (Unclipped overflow allows avatar to pop through cleanly) */}
+        <div className="px-5 pb-5 pt-0 overflow-visible">
+          <div className="flex justify-between items-end -mt-12 mb-3 relative z-30">
+            <div className="p-1 rounded-full bg-[#2C2B30] ring-4 ring-[#2C2B30] shadow-2xl">
+              <UserAvatar src={profile.avatar_url} className="w-20 h-20 border-2 border-[#F58F7C]" />
             </div>
 
             <div className="flex gap-2 mb-1">
-              <button
-                onClick={onToggleFollow}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
-                  isFollowing
-                    ? "bg-[#4F4F51] text-[#D6D6D6]"
-                    : "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30]"
-                }`}
-              >
-                {isFollowing ? <UserCheck size={13} /> : <UserPlus size={13} />}
-                {isFollowing ? "Following" : "Follow"}
-              </button>
+              {!isOwner && (
+                <button
+                  onClick={onToggleFollow}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
+                    isFollowing
+                      ? "bg-[#4F4F51] text-[#D6D6D6]"
+                      : "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30]"
+                  }`}
+                >
+                  {isFollowing ? <UserCheck size={13} /> : <UserPlus size={13} />}
+                  {isFollowing ? "Following" : "Follow"}
+                </button>
+              )}
 
               <button
                 onClick={onDirectMessage}
@@ -1556,29 +1674,63 @@ function UserProfileModal({ isDarkMode, profile, isFollowing, onToggleFollow, on
           </div>
 
           <div>
-            <h3 className="font-bold text-base text-white">{profile.full_name || profile.handle}</h3>
+            <div className="flex items-center gap-1.5">
+              <h3 className="font-bold text-base text-white">{profile.full_name || profile.handle}</h3>
+              {profile.is_private && <Lock size={13} className="text-amber-400" title="Private Vault Account" />}
+              {profile.account_type && (
+                <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-[#4F4F51]/40 text-[#F2C4CE]">
+                  {profile.account_type}
+                </span>
+              )}
+            </div>
             <p className="text-xs text-[#F58F7C]">@{profile.handle}</p>
           </div>
 
-          <p className="text-xs text-[#D6D6D6]/80 mt-2 leading-relaxed">{profile.bio || "Creator on Social Nest"}</p>
+          <p className="text-xs text-[#D6D6D6]/80 mt-2 leading-relaxed">{profile.bio || "Exploring Social Nest 🚀"}</p>
 
-          <div className="border-t border-[#4F4F51] mt-5 pt-3">
-            <span className="text-xs font-bold uppercase tracking-wider block mb-3 text-slate-400">Posts</span>
-            {(!profile.posts || profile.posts.length === 0) ? (
-              <p className="text-xs text-slate-500 py-6 text-center">No posts shared yet.</p>
+          {/* Posts Feed Grid */}
+          <div className="border-t border-[#4F4F51] mt-4 pt-3 max-h-56 overflow-y-auto">
+            <div className="flex items-center justify-between mb-2.5">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                {isPrivateLocked ? "Public Broadcasts" : "All Posts"}
+              </span>
+              {isPrivateLocked && (
+                <span className="text-[11px] text-amber-400 font-semibold flex items-center gap-1">
+                  <Lock size={12} /> Vault Locked
+                </span>
+              )}
+            </div>
+
+            {visiblePosts.length === 0 ? (
+              <div className="py-6 text-center flex flex-col items-center gap-1.5">
+                {isPrivateLocked ? (
+                  <>
+                    <Lock size={20} className="text-amber-400/80 mb-1" />
+                    <p className="text-xs text-white font-bold">This Account is Private</p>
+                    <p className="text-[10px] text-slate-400 max-w-xs">Follow @{profile.handle} to see their Vault posts.</p>
+                  </>
+                ) : (
+                  <p className="text-xs text-slate-500">No posts shared yet.</p>
+                )}
+              </div>
             ) : (
               <div className="grid grid-cols-3 gap-1 rounded-xl overflow-hidden">
-                {profile.posts.map((p) => (
+                {visiblePosts.map((p) => (
                   <div
                     key={p.id}
                     onClick={() => onSelectPost(p)}
                     className="aspect-square relative group cursor-pointer bg-black/40 overflow-hidden"
                   >
                     {p.mediaUrl ? (
-                      <img src={p.mediaUrl} className="w-full h-full object-cover" />
+                      <img src={p.mediaUrl} className="w-full h-full object-cover" alt="" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-[10px] p-1 text-center font-bold text-[#F58F7C]">
                         Aa
+                      </div>
+                    )}
+                    {p.visibility === "followers" && (
+                      <div className="absolute bottom-1 right-1 p-0.5 rounded bg-black/60 text-amber-400">
+                        <Lock size={10} />
                       </div>
                     )}
                   </div>
@@ -1620,11 +1772,11 @@ function ProfileView({ isDarkMode, user, posts, bookmarkedPostIds, onOpenSetting
           </button>
         </div>
 
-        {/* Avatar Elevated Above Banner */}
+        {/* Content Section: Avatar Elevated Above Banner */}
         <div className="p-5 pt-0">
-          <div className="flex items-end justify-between -mt-11 mb-3 relative z-20">
-            <div className="p-1 rounded-full bg-[#2C2B30] border-2 border-[#F58F7C] shadow-xl">
-              <img src={user.avatar} className="w-20 h-20 rounded-full object-cover" />
+          <div className="flex items-end justify-between -mt-11 mb-3 relative z-30">
+            <div className="p-1 rounded-full bg-[#2C2B30] ring-4 ring-[#2C2B30] shadow-xl">
+              <UserAvatar src={user.avatar} className="w-20 h-20 border border-[#F58F7C]" />
             </div>
 
             <div className="flex gap-5 text-center pr-2">
@@ -1635,7 +1787,13 @@ function ProfileView({ isDarkMode, user, posts, bookmarkedPostIds, onOpenSetting
           </div>
 
           <div>
-            <h2 className={`font-bold text-sm ${isDarkMode ? "text-white" : "text-slate-900"}`}>{user.name}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className={`font-bold text-sm ${isDarkMode ? "text-white" : "text-slate-900"}`}>{user.name}</h2>
+              {user.is_private && <Lock size={12} className="text-amber-400" title="Vault Enabled" />}
+              <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-[#4F4F51]/40 text-[#F2C4CE]">
+                {user.account_type}
+              </span>
+            </div>
             <p className="text-xs text-[#F58F7C] font-semibold">@{user.handle}</p>
             <p className={`text-xs mt-1.5 leading-relaxed ${isDarkMode ? "text-[#D6D6D6]/80" : "text-slate-600"}`}>{user.bio}</p>
           </div>
@@ -1713,12 +1871,13 @@ function ProfileView({ isDarkMode, user, posts, bookmarkedPostIds, onOpenSetting
   );
 }
 
-// --- INSTAGRAM-GRADE STUDIO WITH SMOOTH VIDEO RECORDING ---
+// --- STUDIO CREATOR MODAL ---
 function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
   const [studioMode, setStudioMode] = useState("video");
   const [activeFilter, setActiveFilter] = useState("normal");
   const [selectedTrack, setSelectedTrack] = useState(null);
   const [caption, setCaption] = useState("");
+  const [visibility, setVisibility] = useState("public");
   const [capturedMedia, setCapturedMedia] = useState(null);
   const [facingMode, setFacingMode] = useState("user");
   const [audioPickerOpen, setAudioPickerOpen] = useState(false);
@@ -1848,6 +2007,7 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
         type: capturedMedia?.type === "video" ? "video" : "media",
         content: caption.trim(),
         mediaUrl: finalMediaUrl,
+        visibility: visibility,
         audioTitle: selectedTrack ? `${selectedTrack.title} • ${selectedTrack.artist}` : null,
         audioUrl: selectedTrack ? selectedTrack.url : null,
         filterStyle: activeFilter,
@@ -1887,7 +2047,7 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
             disabled={isUploading}
             className="px-4 py-1.5 rounded-full bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold text-xs shadow-lg"
           >
-            {isUploading ? "Sharing..." : "Next"}
+            {isUploading ? "Sharing..." : "Post"}
           </button>
         )}
       </div>
@@ -1959,12 +2119,28 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
 
       <div className="absolute bottom-0 inset-x-0 p-4 pb-8 z-30 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col gap-3">
         {capturedMedia && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 self-start bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/20">
+              <span className="text-[10px] text-slate-400 font-bold uppercase">Audience:</span>
+              <button
+                onClick={() => setVisibility("public")}
+                className={`text-xs px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 transition-all ${visibility === "public" ? "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30]" : "text-white/60 hover:text-white"}`}
+              >
+                <Globe size={11} /> Public Explore
+              </button>
+              <button
+                onClick={() => setVisibility("followers")}
+                className={`text-xs px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 transition-all ${visibility === "followers" ? "bg-amber-400 text-[#2C2B30]" : "text-white/60 hover:text-white"}`}
+              >
+                <Lock size={11} /> Followers Vault
+              </button>
+            </div>
+
             <input
               type="text"
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
-              placeholder="Write a caption with #hashtags or @mentions..."
+              placeholder="Write caption with #tags or @mentions..."
               className="w-full rounded-2xl px-4 py-2.5 text-xs bg-black/60 backdrop-blur-md border border-[#4F4F51] text-white focus:outline-none focus:border-[#F58F7C]"
             />
           </div>
@@ -2063,7 +2239,6 @@ function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUse
   const [progress, setProgress] = useState(0);
   const [showHeartBurst, setShowHeartBurst] = useState(false);
   const lastTapRef = useRef(0);
-  const [profile] = useState(() => getAdaptiveProfile());
 
   useEffect(() => {
     const observer = new IntersectionObserver(([entry]) => {
@@ -2090,7 +2265,6 @@ function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUse
   const handleSparkTap = () => {
     const now = Date.now();
     if (now - lastTapRef.current < 280) {
-      // Double tap to like
       setLiked(true);
       playHapticSFX("like");
       setShowHeartBurst(true);
@@ -2116,24 +2290,16 @@ function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUse
         autoPlay
         playsInline
         muted={isMuted}
-        preload={profile.preloadMode}
         onTimeUpdate={handleTimeUpdate}
         onClick={handleSparkTap}
         className="w-full h-full object-cover cursor-pointer"
       />
 
-      {/* Double Tap Heart Burst Animation */}
       {showHeartBurst && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 animate-ping">
           <Heart size={80} className="fill-[#F58F7C] text-[#F58F7C] drop-shadow-2xl" />
         </div>
       )}
-
-      {/* Adaptive Quality Badge */}
-      <div className="absolute top-4 left-4 px-2.5 py-1 rounded-full bg-black/40 backdrop-blur-md text-[10px] font-bold text-white flex items-center gap-1.5 z-10 border border-white/10">
-        <Wifi size={10} className="text-[#F58F7C]" />
-        <span>{profile.maxResolutionLabel}</span>
-      </div>
 
       {!isPlaying && (
         <div onClick={togglePlay} className="absolute inset-0 bg-black/20 backdrop-blur-[1.5px] flex items-center justify-center cursor-pointer">
@@ -2150,7 +2316,6 @@ function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUse
         {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
       </button>
 
-      {/* Right Social Actions Column */}
       <div className="absolute right-3 bottom-14 z-10 flex flex-col items-center gap-5">
         <button onClick={() => { setLiked(!liked); playHapticSFX("like"); }} className="flex flex-col items-center gap-1 group/btn">
           <div className={`p-2.5 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 transition-transform group-hover/btn:scale-110 ${liked ? "text-[#F58F7C]" : "text-white"}`}>
@@ -2166,14 +2331,12 @@ function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUse
           <span className="text-[11px] font-semibold text-white drop-shadow">{spark.comments?.length || 0}</span>
         </button>
 
-        {/* 1-Tap DM Forwarding */}
         <button onClick={() => onOpenForwardModal(spark)} className="flex flex-col items-center gap-1 group/btn">
           <div className="p-2.5 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 text-white transition-transform group-hover/btn:scale-110 hover:text-[#F58F7C]">
             <Send size={20} className="-rotate-12" />
           </div>
         </button>
 
-        {/* 3-Dots More Options */}
         <button onClick={() => onOpenMoreMenu(spark)} className="p-2 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 text-white transition-transform hover:scale-110">
           <MoreVertical size={18} />
         </button>
@@ -2181,7 +2344,7 @@ function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUse
 
       <div className="absolute bottom-4 left-4 right-16 z-10 text-white flex flex-col gap-2 pointer-events-none">
         <div className="flex items-center gap-2.5 pointer-events-auto cursor-pointer" onClick={() => onOpenUserProfile(spark.user_handle)}>
-          <img src={spark.user_avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"} className="w-8 h-8 rounded-full border border-[#F2C4CE]/50 object-cover" />
+          <UserAvatar src={spark.user_avatar} className="w-8 h-8 border border-[#F2C4CE]/50" />
           <span className="font-semibold text-sm hover:underline">@{spark.user_handle}</span>
         </div>
         {spark.caption && <p className="text-xs text-[#D6D6D6] line-clamp-2 leading-relaxed">{spark.caption}</p>}
@@ -2216,9 +2379,7 @@ function SparkForwardDrawer({ spark, followingHandles, isDarkMode, onClose, onSe
                 className={`p-3 rounded-2xl flex items-center justify-between border ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51]" : "bg-slate-50 border-slate-200"}`}
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-[#F58F7C] to-[#F2C4CE] flex items-center justify-center font-bold text-xs text-[#2C2B30]">
-                    {handle.charAt(0).toUpperCase()}
-                  </div>
+                  <DefaultAvatar className="w-9 h-9" />
                   <span className="text-xs font-bold">@{handle}</span>
                 </div>
                 <button
@@ -2236,7 +2397,7 @@ function SparkForwardDrawer({ spark, followingHandles, isDarkMode, onClose, onSe
   );
 }
 
-// --- SPARKS SHARE DRAWER (COPY LINK & NATIVE PLATFORMS) ---
+// --- SPARKS SHARE DRAWER ---
 function SparkShareDrawer({ spark, isDarkMode, onClose, showToast }) {
   const [copied, setCopied] = useState(false);
 
@@ -2368,7 +2529,7 @@ function StoryViewerModal({ stories, initialIndex, onClose }) {
 
         <div className="absolute top-6 inset-x-0 z-20 flex items-center justify-between px-4">
           <div className="flex items-center gap-2">
-            <img src={activeStory.userAvatar} className="w-8 h-8 rounded-full object-cover border border-[#F2C4CE]/50" />
+            <UserAvatar src={activeStory.userAvatar} className="w-8 h-8 border border-[#F2C4CE]/50" />
             <div>
               <span className="font-semibold text-sm text-white block">{activeStory.username}</span>
               {activeStory.audioTitle && (
@@ -2426,9 +2587,7 @@ function CommentsDrawer({ isDarkMode, target, onClose, onAddComment, onOpenUserP
           ) : (
             comments.map((c) => (
               <div key={c.id} className="flex gap-2.5 items-start">
-                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#F58F7C] to-[#F2C4CE] flex items-center justify-center text-[10px] font-bold text-[#2C2B30] flex-shrink-0">
-                  {c.user.charAt(0).toUpperCase()}
-                </div>
+                <DefaultAvatar className="w-7 h-7" />
                 <div className={`flex-1 p-2.5 rounded-xl border ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51]" : "bg-slate-100 border-slate-200"}`}>
                   <p
                     onClick={() => onOpenUserProfile(c.user)}
@@ -2518,7 +2677,7 @@ function EditProfileModal({ isDarkMode, currentProfile, onClose, onSave }) {
           {bannerUrl ? (
             <img src={bannerUrl} className="w-full h-full object-cover" />
           ) : (
-            <span className="text-xs text-slate-300 flex items-center gap-1.5"><Camera size={14} /> Tap to set banner</span>
+            <span className="text-xs text-slate-300 flex items-center gap-1.5"><Camera size={14} /> Tap to set custom banner</span>
           )}
           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs font-semibold text-white">
             Change Banner
@@ -2529,18 +2688,18 @@ function EditProfileModal({ isDarkMode, currentProfile, onClose, onSave }) {
         <button onClick={onClose} className="absolute top-3 right-3 p-1.5 rounded-full bg-black/60 text-white"><X size={16} /></button>
 
         <div className="p-6 pt-0">
-          <div className="flex items-end justify-between -mt-10 mb-4 relative z-20">
+          <div className="flex items-end justify-between -mt-10 mb-4 relative z-30">
             <div
               onClick={() => avatarInputRef.current?.click()}
-              className="relative group cursor-pointer p-1 rounded-full bg-[#2C2B30] border-2 border-[#F58F7C]"
+              className="relative group cursor-pointer p-1 rounded-full bg-[#2C2B30] ring-4 ring-[#2C2B30]"
             >
-              <img src={avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300"} className="w-18 h-18 rounded-full object-cover" />
+              <UserAvatar src={avatarUrl} className="w-18 h-18 border-2 border-[#F58F7C]" />
               <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                 <Camera size={18} className="text-white" />
               </div>
               <input type="file" ref={avatarInputRef} onChange={handleAvatarChange} accept="image/*" className="hidden" />
             </div>
-            <span className="text-[11px] text-slate-400">{uploading ? "Uploading..." : "Tap photo to change avatar"}</span>
+            <span className="text-[11px] text-slate-400">{uploading ? "Uploading..." : "Tap to customize avatar"}</span>
           </div>
 
           <form onSubmit={(e) => { e.preventDefault(); onSave({ full_name: fullName.trim(), bio: bio.trim(), avatar_url: avatarUrl, banner_url: bannerUrl }); }} className="flex flex-col gap-3">
@@ -2562,7 +2721,7 @@ function EditProfileModal({ isDarkMode, currentProfile, onClose, onSave }) {
   );
 }
 
-// --- MESSAGES VIEW ---
+// --- MESSAGES VIEW WITH SPARK VIDEO CARDS ---
 function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, followingHandles, onSelectChat, onBack }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
@@ -2591,7 +2750,7 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
           convMap.set(partner, {
             userId: partner,
             username: partner,
-            avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
+            avatar: null,
             lastMessage: m.content,
             time: new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
             unread: m.recipient_handle === currentHandle && !m.is_read
@@ -2680,7 +2839,7 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
       <div className={`flex flex-col h-[78vh] rounded-3xl overflow-hidden border shadow-2xl ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-slate-200"}`}>
         <div className={`px-4 py-3 border-b flex items-center gap-3 ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51]" : "bg-slate-100 border-slate-200"}`}>
           <button onClick={onBack} className="p-1 text-slate-400 hover:text-white"><ArrowLeft size={18} /></button>
-          <img src={activeChat.avatar} className="w-8 h-8 rounded-full object-cover" />
+          <UserAvatar src={activeChat.avatar} className="w-8 h-8" />
           <div className="flex-1 min-w-0">
             <p className={`text-xs font-bold leading-tight truncate ${isDarkMode ? "text-white" : "text-slate-900"}`}>{activeChat.username}</p>
             <p className="text-[10px] text-[#F58F7C] font-medium">@{activeChat.userId}</p>
@@ -2693,11 +2852,37 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
           ) : (
             messages.map((msg) => {
               const isMe = msg.sender_handle === currentHandle;
+              const isSparkShare = msg.content?.includes("storage/v1/object/public/sparks-media");
+
+              let videoUrl = null;
+              let sparkCaption = "Shared Spark";
+              if (isSparkShare) {
+                const match = msg.content.match(/(https?:\/\/[^\s]+)/);
+                if (match) videoUrl = match[0];
+                const textPart = msg.content.replace("🔥 Shared a Spark:", "").replace(videoUrl || "", "").replace("-", "").trim();
+                if (textPart) sparkCaption = textPart;
+              }
+
               return (
-                <div key={msg.id} className={`flex flex-col max-w-[75%] ${isMe ? "self-end items-end" : "self-start items-start"}`}>
-                  <div className={`p-3 rounded-2xl text-xs leading-relaxed ${isMe ? "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold rounded-tr-none" : isDarkMode ? "bg-[#4F4F51] text-[#D6D6D6] rounded-tl-none" : "bg-slate-200 text-slate-900 rounded-tl-none"}`}>
-                    {msg.content}
-                  </div>
+                <div key={msg.id} className={`flex flex-col max-w-[80%] ${isMe ? "self-end items-end" : "self-start items-start"}`}>
+                  {isSparkShare && videoUrl ? (
+                    <div className={`p-2.5 rounded-2xl border shadow-lg flex flex-col gap-2 ${isMe ? "bg-gradient-to-br from-[#F58F7C]/20 to-[#F2C4CE]/10 border-[#F58F7C]/40" : isDarkMode ? "bg-[#4F4F51]/40 border-[#4F4F51]" : "bg-white border-slate-200"}`}>
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-[#F58F7C]">
+                        <Zap size={14} className="fill-[#F58F7C]" />
+                        <span>Shared Spark</span>
+                      </div>
+
+                      <div className="relative w-48 h-64 rounded-xl overflow-hidden bg-black flex items-center justify-center">
+                        <video src={videoUrl} className="w-full h-full object-cover" playsInline muted loop autoPlay />
+                      </div>
+
+                      <p className="text-xs text-white font-medium line-clamp-1">{sparkCaption}</p>
+                    </div>
+                  ) : (
+                    <div className={`p-3 rounded-2xl text-xs leading-relaxed ${isMe ? "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold rounded-tr-none" : isDarkMode ? "bg-[#4F4F51] text-[#D6D6D6] rounded-tl-none" : "bg-slate-200 text-slate-900 rounded-tl-none"}`}>
+                      {msg.content}
+                    </div>
+                  )}
                   <span className="text-[9px] text-slate-500 mt-1">{new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                 </div>
               );
@@ -2751,11 +2936,11 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
               return (
                 <div
                   key={u.handle}
-                  onClick={() => onSelectChat({ userId: u.handle, username: u.full_name || u.handle, avatar: u.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150" })}
+                  onClick={() => onSelectChat({ userId: u.handle, username: u.full_name || u.handle, avatar: u.avatar_url })}
                   className={`p-3 rounded-2xl flex items-center justify-between cursor-pointer border transition-all ${isDarkMode ? "bg-[#4F4F51]/30 hover:bg-[#4F4F51]/60 border-[#4F4F51]" : "bg-white hover:bg-slate-100 border-slate-200"}`}
                 >
                   <div className="flex items-center gap-3">
-                    <img src={u.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"} className="w-9 h-9 rounded-full object-cover" />
+                    <UserAvatar src={u.avatar_url} className="w-9 h-9" />
                     <div>
                       <p className="text-xs font-bold text-white">{u.full_name || u.handle}</p>
                       <p className="text-[10px] text-[#F58F7C]">@{u.handle}</p>
@@ -2788,7 +2973,7 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
                 }`}
               >
                 <div className="relative">
-                  <img src={chat.avatar} className="w-11 h-11 rounded-full object-cover" />
+                  <UserAvatar src={chat.avatar} className="w-11 h-11" />
                   {chat.unread && <span className="absolute top-0 right-0 w-3 h-3 bg-[#F58F7C] rounded-full border-2 border-black" />}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -2810,90 +2995,139 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
 }
 
 // --- SETTINGS MODAL ---
-function SettingsModal({ isDarkMode, setIsDarkMode, currentProfile, onClose, onOpenEditProfile }) {
-  const [isPrivate, setIsPrivate] = useState(false);
-  const [activityStatus, setActivityStatus] = useState(true);
+function SettingsModal({ isDarkMode, setIsDarkMode, soundEnabled, setSoundEnabled, dataSaverEnabled, setDataSaverEnabled, currentProfile, onUpdateProfileSetting, onClose, onOpenEditProfile }) {
+  const [aboutDrawerOpen, setAboutDrawerOpen] = useState(false);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl relative border ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-[#D6D6D6]" : "bg-white border-slate-200 text-slate-900"}`}>
+      <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl relative border max-h-[90vh] overflow-y-auto ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-[#D6D6D6]" : "bg-white border-slate-200 text-slate-900"}`}>
         <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
           <X size={20} />
         </button>
 
-        <h3 className="text-base font-bold mb-5 flex items-center gap-2">
-          <Settings size={18} className="text-[#F58F7C]" /> Settings
+        <h3 className="text-base font-bold mb-4 flex items-center gap-2">
+          <Settings size={18} className="text-[#F58F7C]" /> Settings & Preferences
         </h3>
 
         <div className="flex flex-col gap-4">
-          <div className={`p-3 rounded-2xl border flex items-center justify-between ${isDarkMode ? "bg-black/40 border-[#4F4F51]" : "bg-slate-50 border-slate-200"}`}>
-            <div className="flex items-center gap-2.5">
-              {isDarkMode ? <Moon size={16} className="text-[#F58F7C]" /> : <Sun size={16} className="text-[#F58F7C]" />}
-              <div>
-                <p className="text-xs font-bold">Appearance</p>
-                <p className="text-[10px] text-slate-400">{isDarkMode ? "Dark Night Theme" : "Light Day Theme"}</p>
-              </div>
-            </div>
-            <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className={`px-3 py-1 text-xs font-semibold rounded-xl border transition-all ${
-                isDarkMode ? "bg-[#4F4F51] border-[#4F4F51] text-[#F2C4CE]" : "bg-white border-slate-300 text-slate-800"
-              }`}
-            >
-              {isDarkMode ? "Night" : "Day"}
-            </button>
-          </div>
+          <div className={`p-3.5 rounded-2xl border flex flex-col gap-3 ${isDarkMode ? "bg-black/40 border-[#4F4F51]" : "bg-slate-50 border-slate-200"}`}>
+            <span className="text-[11px] font-bold text-[#F58F7C] uppercase tracking-wider">Account Privacy & Category</span>
 
-          <div className={`p-3 rounded-2xl border flex items-center justify-between ${isDarkMode ? "bg-black/40 border-[#4F4F51]" : "bg-slate-50 border-slate-200"}`}>
-            <div>
-              <p className="text-xs font-bold">Profile Info</p>
-              <p className="text-[10px] text-slate-400">@{currentProfile?.handle || "user"}</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold flex items-center gap-1.5">
+                  <Lock size={13} className="text-amber-400" /> Private Account (Vault)
+                </p>
+                <p className="text-[10px] text-slate-400">Lock posts from strangers; public broadcasts remain discoverable.</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={currentProfile?.is_private || false}
+                onChange={(e) => onUpdateProfileSetting("is_private", e.target.checked)}
+                className="accent-[#F58F7C] w-4 h-4 cursor-pointer"
+              />
             </div>
-            <button
-              onClick={onOpenEditProfile}
-              className="text-xs font-bold text-[#F58F7C] hover:underline"
-            >
-              Edit
-            </button>
+
+            <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+              <span className="text-xs font-medium">Account Category</span>
+              <select
+                value={currentProfile?.account_type || "creator"}
+                onChange={(e) => onUpdateProfileSetting("account_type", e.target.value)}
+                className={`text-xs px-2.5 py-1 rounded-xl font-bold border focus:outline-none ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-white" : "bg-white border-slate-200"}`}
+              >
+                <option value="creator">Creator</option>
+                <option value="personal">Personal</option>
+                <option value="business">Business</option>
+              </select>
+            </div>
           </div>
 
           <div className={`p-3.5 rounded-2xl border flex flex-col gap-3 ${isDarkMode ? "bg-black/40 border-[#4F4F51]" : "bg-slate-50 border-slate-200"}`}>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Privacy & Safety</span>
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Experience & Engine</span>
 
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Lock size={15} className="text-slate-400" />
-                <span className="text-xs font-medium">Private Account</span>
+                {isDarkMode ? <Moon size={15} className="text-[#F58F7C]" /> : <Sun size={15} className="text-[#F58F7C]" />}
+                <span className="text-xs font-medium">Night Theme</span>
               </div>
               <input
                 type="checkbox"
-                checked={isPrivate}
-                onChange={() => setIsPrivate(!isPrivate)}
+                checked={isDarkMode}
+                onChange={() => setIsDarkMode(!isDarkMode)}
                 className="accent-[#F58F7C] w-4 h-4 cursor-pointer"
               />
             </div>
 
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Eye size={15} className="text-slate-400" />
-                <span className="text-xs font-medium">Show Active Status</span>
+                <Music size={15} className="text-[#F2C4CE]" />
+                <div>
+                  <span className="text-xs font-medium block">Sound & Haptics</span>
+                  <span className="text-[9px] text-slate-400">Play chimes for sends, likes & uploads</span>
+                </div>
               </div>
               <input
                 type="checkbox"
-                checked={activityStatus}
-                onChange={() => setActivityStatus(!activityStatus)}
+                checked={soundEnabled}
+                onChange={() => setSoundEnabled(!soundEnabled)}
                 className="accent-[#F58F7C] w-4 h-4 cursor-pointer"
               />
             </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Wifi size={15} className="text-emerald-400" />
+                <div>
+                  <span className="text-xs font-medium block">Data Saver</span>
+                  <span className="text-[9px] text-slate-400">Cap video playback to 720p</span>
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={dataSaverEnabled}
+                onChange={() => setDataSaverEnabled(!dataSaverEnabled)}
+                className="accent-[#F58F7C] w-4 h-4 cursor-pointer"
+              />
+            </div>
+          </div>
+
+          <div className={`p-3.5 rounded-2xl border flex flex-col gap-2.5 ${isDarkMode ? "bg-black/40 border-[#4F4F51]" : "bg-slate-50 border-slate-200"}`}>
+            <button
+              onClick={() => setAboutDrawerOpen(true)}
+              className="w-full text-left flex items-center justify-between text-xs font-bold text-[#D6D6D6] hover:text-[#F58F7C]"
+            >
+              <div className="flex items-center gap-2">
+                <Info size={15} className="text-[#F58F7C]" />
+                <span>About Social Nest & Guidelines</span>
+              </div>
+              <span className="text-[10px] text-slate-500">v1.3.0 Hybrid</span>
+            </button>
           </div>
 
           <button
             onClick={() => supabase.auth.signOut()}
-            className="w-full py-2.5 rounded-xl border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-bold flex items-center justify-center gap-2 transition-colors mt-2"
+            className="w-full py-2.5 rounded-xl border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-bold flex items-center justify-center gap-2 transition-colors"
           >
             <LogOut size={14} /> Log Out
           </button>
         </div>
+
+        {aboutDrawerOpen && (
+          <div className="fixed inset-0 z-60 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+            <div className={`w-full max-w-sm rounded-3xl p-6 border shadow-2xl relative ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-white" : "bg-white text-black"}`}>
+              <button onClick={() => setAboutDrawerOpen(false)} className="absolute top-4 right-4"><X size={18} /></button>
+              <div className="flex flex-col items-center text-center gap-2 mb-4">
+                <BrandLogo className="w-12 h-12" animated />
+                <h4 className="text-sm font-black tracking-widest text-[#F58F7C]">SOCIAL NEST v1.3.0</h4>
+                <p className="text-[11px] text-slate-400">Next-generation creator network with selective privacy vaults and in-app studio media creation.</p>
+              </div>
+              <div className="text-[11px] text-slate-300 space-y-2 border-t border-white/10 pt-3">
+                <p><strong>Vault Privacy:</strong> Keep personal memories locked away for followers only while publishing viral Sparks to the world.</p>
+                <p><strong>Community Rules:</strong> Authentic expression, creator respect, and zero spam.</p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2948,6 +3182,7 @@ function NotificationsDrawer({ isDarkMode, notifications, onClose, onOpenUserPro
 // --- UPLOAD SPARK MODAL ---
 function UploadSparkModal({ isDarkMode, onClose, onSubmit }) {
   const [caption, setCaption] = useState("");
+  const [visibility, setVisibility] = useState("public");
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -2968,7 +3203,7 @@ function UploadSparkModal({ isDarkMode, onClose, onSubmit }) {
       const { error } = await supabase.storage.from("sparks-media").upload(fileName, selectedFile);
       if (error) throw error;
       const { data } = supabase.storage.from("sparks-media").getPublicUrl(fileName);
-      await supabase.from("sparks").insert([{ user_handle: "guest", video_url: data.publicUrl, caption: caption.trim() }]);
+      await supabase.from("sparks").insert([{ user_handle: "guest", video_url: data.publicUrl, caption: caption.trim(), visibility: visibility }]);
       playHapticSFX("upload");
       onSubmit();
     } catch (err) {
@@ -2982,7 +3217,26 @@ function UploadSparkModal({ isDarkMode, onClose, onSubmit }) {
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className={`w-full max-w-md rounded-2xl p-5 shadow-2xl relative border ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-white" : "bg-white border-slate-200 text-slate-900"}`}>
         <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
-        <h3 className="text-base font-bold mb-4 flex items-center gap-2"><Zap className="fill-[#F58F7C] text-[#F58F7C]" size={18} /> Upload Spark Clip</h3>
+        <h3 className="text-base font-bold mb-3 flex items-center gap-2"><Zap className="fill-[#F58F7C] text-[#F58F7C]" size={18} /> Upload Spark Clip</h3>
+        
+        <div className="flex items-center gap-2 mb-3 bg-black/40 p-1.5 rounded-xl border border-[#4F4F51]">
+          <span className="text-[10px] text-slate-400 font-bold uppercase pl-1">Audience:</span>
+          <button
+            type="button"
+            onClick={() => setVisibility("public")}
+            className={`text-xs px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition-all ${visibility === "public" ? "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30]" : "text-slate-400"}`}
+          >
+            <Globe size={11} /> Public Explore
+          </button>
+          <button
+            type="button"
+            onClick={() => setVisibility("followers")}
+            className={`text-xs px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition-all ${visibility === "followers" ? "bg-amber-400 text-[#2C2B30]" : "text-slate-400"}`}
+          >
+            <Lock size={11} /> Followers Vault
+          </button>
+        </div>
+
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <input type="file" accept="video/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
           {!previewUrl ? (
