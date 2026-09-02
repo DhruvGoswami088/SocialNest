@@ -1,6 +1,13 @@
 {
+  "id": "/",
   "short_name": "SocialNest",
   "name": "Social Nest",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#2C2B30",
+  "theme_color": "#2C2B30",
   "icons": [
     {
       "src": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=192&h=192&fit=crop",
@@ -14,10 +21,5 @@
       "type": "image/jpeg",
       "purpose": "any maskable"
     }
-  ],
-  "start_url": "/",
-  "background_color": "#2C2B30",
-  "theme_color": "#2C2B30",
-  "display": "standalone",
-  "orientation": "portrait"
+  ]
 }
