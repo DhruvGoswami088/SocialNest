@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabaseClient";
+import { playHapticSFX, getAdaptiveProfile } from "./utils/sfx";
 import {
   X,
   Bell,
@@ -52,52 +53,12 @@ import {
   RefreshCw,
   Disc,
   Copy,
-  Check
+  Check,
+  Wifi,
+  ShieldCheck
 } from "lucide-react";
 
-// --- WEB AUDIO API NATIVE AMBIENT SFX ENGINE ---
-function playHapticSFX(type) {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    const now = ctx.currentTime;
-    if (type === "send") {
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(540, now);
-      osc.frequency.exponentialRampToValueAtTime(880, now + 0.12);
-      gain.gain.setValueAtTime(0.25, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
-      osc.start(now);
-      osc.stop(now + 0.15);
-    } else if (type === "receive") {
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(880, now);
-      osc.frequency.exponentialRampToValueAtTime(1100, now + 0.08);
-      osc.frequency.exponentialRampToValueAtTime(660, now + 0.18);
-      gain.gain.setValueAtTime(0.3, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-      osc.start(now);
-      osc.stop(now + 0.22);
-    } else if (type === "upload") {
-      osc.type = "triangle";
-      osc.frequency.setValueAtTime(440, now);
-      osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.1);
-      osc.frequency.exponentialRampToValueAtTime(880, now + 0.25);
-      gain.gain.setValueAtTime(0.25, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-      osc.start(now);
-      osc.stop(now + 0.32);
-    }
-  } catch (e) {
-    console.debug("AudioContext auto-blocked until interaction", e);
-  }
-}
-
-// --- OPTION 3: INFINITE SN MONOGRAM LOGO ---
+// --- BRANDED INFINITE SN MONOGRAM LOGO ---
 function BrandLogo({ className = "w-8 h-8", animated = false }) {
   return (
     <svg
@@ -169,7 +130,7 @@ const SAMPLE_STORIES = [
     audioUrl: "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=lofi-study-112191.mp3",
     audioTitle: "Lofi Study Beats • Nest Sounds",
     category: "announcement",
-    caption: "🚀 Studio video recording, chat search & sound live!",
+    caption: "🚀 Adaptive 4K/720p engine & Direct Spark DM live!",
   },
   {
     id: "s2",
@@ -218,7 +179,10 @@ export default function App() {
   const [activeCommentTarget, setActiveCommentTarget] = useState(null);
   const [isStudioOpen, setIsStudioOpen] = useState(false);
   const [isUploadSparkOpen, setIsUploadSparkOpen] = useState(false);
-  const [sparkShareModal, setSparkShareModal] = useState(null);
+
+  // Spark Sharing Sheets
+  const [sparkForwardTarget, setSparkForwardTarget] = useState(null); // Spark to send via DM
+  const [sparkShareModal, setSparkShareModal] = useState(null);       // Spark 3-dots share drawer
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -418,6 +382,7 @@ export default function App() {
     });
 
     setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, likes: updatedCount } : p)));
+    playHapticSFX("like");
 
     try {
       if (isAlreadyLiked) {
@@ -527,6 +492,19 @@ export default function App() {
     setActiveTab("messages");
   };
 
+  // Forward Spark directly into friend's DM
+  const handleForwardSparkToFriend = async (friendHandle, sparkItem) => {
+    const convId = [currentHandle, friendHandle].sort().join("_");
+    const payload = `🔥 Shared a Spark: ${sparkItem.caption || "Watch clip"} - ${sparkItem.video_url}`;
+
+    await supabase.from("messages").insert([
+      { conversation_id: convId, sender_handle: currentHandle, recipient_handle: friendHandle, content: payload, is_read: false }
+    ]);
+    playHapticSFX("send");
+    setSparkForwardTarget(null);
+    showToast(`Sent to @${friendHandle}!`);
+  };
+
   const handleOpenUserProfile = async (targetHandle) => {
     try {
       const { data } = await supabase.from("profiles").select("*").eq("handle", targetHandle).single();
@@ -618,7 +596,6 @@ export default function App() {
           )}
         </div>
 
-        {/* Action icons: New Studio Post & Notifications */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsStudioOpen(true)}
@@ -640,7 +617,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content Area */}
+      {/* Main Views */}
       <main className="w-full max-w-md px-3 pt-2">
         {activeTab === "home" && (
           <HomeView
@@ -702,10 +679,7 @@ export default function App() {
                     heightClass="h-[76vh]"
                     onOpenComments={(s) => setActiveCommentTarget({ type: "spark", item: s })}
                     onOpenUserProfile={handleOpenUserProfile}
-                    onOpenSendModal={() => {
-                      setActiveTab("messages");
-                      showToast("Select a friend to share this clip!");
-                    }}
+                    onOpenForwardModal={(s) => setSparkForwardTarget(s)}
                     onOpenMoreMenu={(s) => setSparkShareModal(s)}
                   />
                 ))
@@ -813,7 +787,18 @@ export default function App() {
         />
       )}
 
-      {/* Sparks 3-Dots Share Drawer */}
+      {/* Spark Quick Direct Message Forward Drawer */}
+      {sparkForwardTarget && (
+        <SparkForwardDrawer
+          spark={sparkForwardTarget}
+          followingHandles={followingHandles}
+          isDarkMode={isDarkMode}
+          onClose={() => setSparkForwardTarget(null)}
+          onSend={(handle) => handleForwardSparkToFriend(handle, sparkForwardTarget)}
+        />
+      )}
+
+      {/* Spark 3-Dots Share Drawer */}
       {sparkShareModal && (
         <SparkShareDrawer
           spark={sparkShareModal}
@@ -1125,13 +1110,16 @@ function HomeView({
   );
 }
 
-// --- GLASS VIDEO PLAYER WITH ACTIVE AUDIO ---
-function GlassVideoPlayer({ src, audioUrl, isDarkMode }) {
+// --- ADAPTIVE HARDWARE/NETWORK GLASS VIDEO PLAYER ---
+function AdaptiveGlassPlayer({ src, audioUrl, isDarkMode, onDoubleTap }) {
   const videoRef = useRef(null);
   const audioRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [progress, setProgress] = useState(0);
+  const [profile] = useState(() => getAdaptiveProfile());
+  const [showHeartBurst, setShowHeartBurst] = useState(false);
+  const lastTapRef = useRef(0);
 
   const togglePlay = () => {
     if (videoRef.current) {
@@ -1150,6 +1138,19 @@ function GlassVideoPlayer({ src, audioUrl, isDarkMode }) {
     }
   };
 
+  const handleVideoTouch = (e) => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 280) {
+      // Double Tap to Like
+      setShowHeartBurst(true);
+      if (onDoubleTap) onDoubleTap();
+      setTimeout(() => setShowHeartBurst(false), 750);
+    } else {
+      togglePlay();
+    }
+    lastTapRef.current = now;
+  };
+
   const handleTimeUpdate = () => {
     if (videoRef.current && videoRef.current.duration) {
       setProgress((videoRef.current.currentTime / videoRef.current.duration) * 100);
@@ -1164,14 +1165,28 @@ function GlassVideoPlayer({ src, audioUrl, isDarkMode }) {
         loop
         playsInline
         muted={isMuted}
+        preload={profile.preloadMode}
         onTimeUpdate={handleTimeUpdate}
-        onClick={togglePlay}
+        onClick={handleVideoTouch}
         className="w-full max-h-96 object-cover cursor-pointer"
       />
 
       {audioUrl && (
         <audio ref={audioRef} src={audioUrl} loop muted={isMuted} />
       )}
+
+      {/* Double Tap Heart Burst Animation */}
+      {showHeartBurst && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 animate-ping">
+          <Heart size={72} className="fill-[#F58F7C] text-[#F58F7C] drop-shadow-2xl" />
+        </div>
+      )}
+
+      {/* Adaptive Quality Badge */}
+      <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md bg-black/50 backdrop-blur-md text-[10px] font-semibold text-[#D6D6D6] flex items-center gap-1 z-10">
+        <Wifi size={10} className="text-[#F58F7C]" />
+        <span>{profile.maxResolutionLabel}</span>
+      </div>
 
       {!isPlaying && (
         <div
@@ -1377,11 +1392,23 @@ function FormattedPostText({ text, onSelectTag, onOpenUserProfile, isDarkMode })
   );
 }
 
-// --- CLEAN FEED CARD ---
+// --- CLEAN FEED CARD WITH DOUBLE-TAP TO LIKE ---
 function FeedCard({ post, isDarkMode, isLiked, isBookmarked, currentHandle, isFollowing, onToggleFollow, onDeletePost, onOpenComments, onLikePost, onToggleBookmark, onSelectTag, onOpenUserProfile }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showHeartBurst, setShowHeartBurst] = useState(false);
+  const lastTapRef = useRef(0);
   const isOwner = post.username === currentHandle;
   const isVideo = post.mediaUrl && (post.mediaUrl.endsWith(".mp4") || post.mediaUrl.endsWith(".webm") || post.mediaUrl.endsWith(".mov") || post.type === "video");
+
+  const handleMediaTap = () => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 300) {
+      if (!isLiked) onLikePost();
+      setShowHeartBurst(true);
+      setTimeout(() => setShowHeartBurst(false), 700);
+    }
+    lastTapRef.current = now;
+  };
 
   return (
     <div className={`py-4 border-b ${isDarkMode ? "border-[#4F4F51]" : "border-slate-200"} relative`}>
@@ -1435,11 +1462,17 @@ function FeedCard({ post, isDarkMode, isLiked, isBookmarked, currentHandle, isFo
       )}
 
       {post.mediaUrl && (
-        <div className="mb-3">
+        <div className="mb-3 relative" onClick={handleMediaTap}>
+          {showHeartBurst && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 animate-ping">
+              <Heart size={68} className="fill-[#F58F7C] text-[#F58F7C] drop-shadow-2xl" />
+            </div>
+          )}
+
           {isVideo ? (
-            <GlassVideoPlayer src={post.mediaUrl} audioUrl={post.audioUrl} isDarkMode={isDarkMode} />
+            <AdaptiveGlassPlayer src={post.mediaUrl} audioUrl={post.audioUrl} isDarkMode={isDarkMode} onDoubleTap={() => { if (!isLiked) onLikePost(); }} />
           ) : (
-            <div className={`rounded-2xl overflow-hidden border ${isDarkMode ? "border-[#4F4F51] bg-black" : "border-slate-200 bg-slate-100"} flex items-center justify-center max-h-96`}>
+            <div className={`rounded-2xl overflow-hidden border ${isDarkMode ? "border-[#4F4F51] bg-black" : "border-slate-200 bg-slate-100"} flex items-center justify-center max-h-96 cursor-pointer`}>
               <img
                 src={post.mediaUrl}
                 style={{ filter: FILTER_STYLES[post.filterStyle]?.filter || "none" }}
@@ -1587,7 +1620,7 @@ function ProfileView({ isDarkMode, user, posts, bookmarkedPostIds, onOpenSetting
           </button>
         </div>
 
-        {/* Content Section: Avatar Elevated Above Banner */}
+        {/* Avatar Elevated Above Banner */}
         <div className="p-5 pt-0">
           <div className="flex items-end justify-between -mt-11 mb-3 relative z-20">
             <div className="p-1 rounded-full bg-[#2C2B30] border-2 border-[#F58F7C] shadow-xl">
@@ -1680,13 +1713,13 @@ function ProfileView({ isDarkMode, user, posts, bookmarkedPostIds, onOpenSetting
   );
 }
 
-// --- INSTAGRAM-GRADE STUDIO WITH REAL VIDEO RECORDING ---
+// --- INSTAGRAM-GRADE STUDIO WITH SMOOTH VIDEO RECORDING ---
 function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
-  const [studioMode, setStudioMode] = useState("video"); // 'video' | 'photo'
+  const [studioMode, setStudioMode] = useState("video");
   const [activeFilter, setActiveFilter] = useState("normal");
   const [selectedTrack, setSelectedTrack] = useState(null);
   const [caption, setCaption] = useState("");
-  const [capturedMedia, setCapturedMedia] = useState(null); // { type: 'video'|'photo', url, blob }
+  const [capturedMedia, setCapturedMedia] = useState(null);
   const [facingMode, setFacingMode] = useState("user");
   const [audioPickerOpen, setAudioPickerOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -1732,7 +1765,6 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
     setFacingMode((prev) => (prev === "user" ? "environment" : "user"));
   };
 
-  // Capture Photo
   const handleSnapPhoto = () => {
     if (!videoStreamRef.current) return;
     const canvas = document.createElement("canvas");
@@ -1746,7 +1778,6 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
     if (mediaStreamRef.current) mediaStreamRef.current.getTracks().forEach((t) => t.stop());
   };
 
-  // Start Video Recording
   const handleStartRecording = () => {
     if (!mediaStreamRef.current) return;
     recordedChunksRef.current = [];
@@ -1780,7 +1811,6 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
     }
   };
 
-  // Stop Video Recording
   const handleStopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
@@ -1831,7 +1861,6 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col justify-between">
-      {/* Top Floating Controls */}
       <div className="absolute top-0 inset-x-0 p-4 flex items-center justify-between z-30 bg-gradient-to-b from-black/80 via-black/20 to-transparent">
         <button onClick={onClose} className="p-2 rounded-full bg-black/40 backdrop-blur-md text-white border border-white/10">
           <X size={20} />
@@ -1863,7 +1892,6 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
         )}
       </div>
 
-      {/* Floating Side Tools (Flip Camera) */}
       {!capturedMedia && !isRecording && (
         <div className="absolute right-4 top-20 z-30 flex flex-col gap-4">
           <button
@@ -1876,7 +1904,6 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
         </div>
       )}
 
-      {/* Camera / Captured Media Viewport */}
       <div className="w-full h-full relative bg-black flex items-center justify-center overflow-hidden">
         {!capturedMedia ? (
           <video
@@ -1905,7 +1932,6 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
           />
         )}
 
-        {/* Audio Drawer Popup */}
         {audioPickerOpen && (
           <div className="absolute top-16 inset-x-4 p-4 rounded-2xl bg-[#2C2B30]/95 backdrop-blur-xl border border-[#4F4F51] z-40 flex flex-col gap-2 shadow-2xl">
             <div className="flex justify-between items-center pb-2 border-b border-[#4F4F51]">
@@ -1931,7 +1957,6 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
         )}
       </div>
 
-      {/* Bottom Shutter & Studio Mode Controls */}
       <div className="absolute bottom-0 inset-x-0 p-4 pb-8 z-30 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col gap-3">
         {capturedMedia && (
           <div className="flex items-center gap-2">
@@ -1945,7 +1970,6 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
           </div>
         )}
 
-        {/* Filter Carousel */}
         <div className="flex items-center justify-center gap-2 overflow-x-auto no-scrollbar py-1">
           {Object.entries(FILTER_STYLES).map(([key, item]) => (
             <button
@@ -1962,7 +1986,6 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
           ))}
         </div>
 
-        {/* Shutter Button & Mode Selector */}
         {!capturedMedia && (
           <div className="flex flex-col items-center gap-4 pt-1">
             <div className="flex items-center justify-around w-full">
@@ -1986,7 +2009,6 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
                 }}
               />
 
-              {/* Shutter Button */}
               {studioMode === "video" ? (
                 <button
                   onClick={isRecording ? handleStopRecording : handleStartRecording}
@@ -2011,7 +2033,6 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
               </button>
             </div>
 
-            {/* Video vs Photo Switcher */}
             <div className="flex items-center gap-6 text-xs font-bold uppercase tracking-widest text-slate-400">
               <button
                 onClick={() => setStudioMode("video")}
@@ -2033,13 +2054,16 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
   );
 }
 
-// --- AUTOPLAYING & LOOPING SPARK CARD WITH REELS-STYLE SEND ---
-function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUserProfile, onOpenSendModal, onOpenMoreMenu }) {
+// --- AUTOPLAYING & LOOPING SPARK CARD ---
+function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUserProfile, onOpenForwardModal, onOpenMoreMenu }) {
   const videoRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
   const [liked, setLiked] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [showHeartBurst, setShowHeartBurst] = useState(false);
+  const lastTapRef = useRef(0);
+  const [profile] = useState(() => getAdaptiveProfile());
 
   useEffect(() => {
     const observer = new IntersectionObserver(([entry]) => {
@@ -2063,6 +2087,20 @@ function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUse
     }
   };
 
+  const handleSparkTap = () => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 280) {
+      // Double tap to like
+      setLiked(true);
+      playHapticSFX("like");
+      setShowHeartBurst(true);
+      setTimeout(() => setShowHeartBurst(false), 700);
+    } else {
+      togglePlay();
+    }
+    lastTapRef.current = now;
+  };
+
   const handleTimeUpdate = () => {
     if (videoRef.current && videoRef.current.duration) {
       setProgress((videoRef.current.currentTime / videoRef.current.duration) * 100);
@@ -2078,10 +2116,24 @@ function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUse
         autoPlay
         playsInline
         muted={isMuted}
+        preload={profile.preloadMode}
         onTimeUpdate={handleTimeUpdate}
-        onClick={togglePlay}
+        onClick={handleSparkTap}
         className="w-full h-full object-cover cursor-pointer"
       />
+
+      {/* Double Tap Heart Burst Animation */}
+      {showHeartBurst && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 animate-ping">
+          <Heart size={80} className="fill-[#F58F7C] text-[#F58F7C] drop-shadow-2xl" />
+        </div>
+      )}
+
+      {/* Adaptive Quality Badge */}
+      <div className="absolute top-4 left-4 px-2.5 py-1 rounded-full bg-black/40 backdrop-blur-md text-[10px] font-bold text-white flex items-center gap-1.5 z-10 border border-white/10">
+        <Wifi size={10} className="text-[#F58F7C]" />
+        <span>{profile.maxResolutionLabel}</span>
+      </div>
 
       {!isPlaying && (
         <div onClick={togglePlay} className="absolute inset-0 bg-black/20 backdrop-blur-[1.5px] flex items-center justify-center cursor-pointer">
@@ -2100,7 +2152,7 @@ function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUse
 
       {/* Right Social Actions Column */}
       <div className="absolute right-3 bottom-14 z-10 flex flex-col items-center gap-5">
-        <button onClick={() => setLiked(!liked)} className="flex flex-col items-center gap-1 group/btn">
+        <button onClick={() => { setLiked(!liked); playHapticSFX("like"); }} className="flex flex-col items-center gap-1 group/btn">
           <div className={`p-2.5 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 transition-transform group-hover/btn:scale-110 ${liked ? "text-[#F58F7C]" : "text-white"}`}>
             <Heart size={22} className={liked ? "fill-[#F58F7C]" : ""} />
           </div>
@@ -2114,14 +2166,14 @@ function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUse
           <span className="text-[11px] font-semibold text-white drop-shadow">{spark.comments?.length || 0}</span>
         </button>
 
-        {/* Reels-Style Direct Message Send Button */}
-        <button onClick={onOpenSendModal} className="flex flex-col items-center gap-1 group/btn">
+        {/* 1-Tap DM Forwarding */}
+        <button onClick={() => onOpenForwardModal(spark)} className="flex flex-col items-center gap-1 group/btn">
           <div className="p-2.5 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 text-white transition-transform group-hover/btn:scale-110 hover:text-[#F58F7C]">
             <Send size={20} className="-rotate-12" />
           </div>
         </button>
 
-        {/* 3-Dots More Options (Share & Copy Link) */}
+        {/* 3-Dots More Options */}
         <button onClick={() => onOpenMoreMenu(spark)} className="p-2 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 text-white transition-transform hover:scale-110">
           <MoreVertical size={18} />
         </button>
@@ -2136,6 +2188,48 @@ function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUse
 
         <div className="w-full h-1 bg-[#4F4F51]/70 backdrop-blur-md rounded-full overflow-hidden mt-1">
           <div className="h-full bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE]" style={{ width: `${progress}%` }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- SPARK 1-TAP DM FORWARD DRAWER ---
+function SparkForwardDrawer({ spark, followingHandles, isDarkMode, onClose, onSend }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end justify-center p-0 sm:p-4">
+      <div className={`w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 border shadow-2xl max-h-[70vh] flex flex-col ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-white" : "bg-white border-[#D6D6D6] text-slate-900"}`}>
+        <div className="flex justify-between items-center pb-3 border-b border-[#4F4F51]">
+          <span className="text-xs font-bold uppercase tracking-wider text-[#F58F7C] flex items-center gap-1.5">
+            <Send size={14} /> Send Spark to Followed Creators
+          </span>
+          <button onClick={onClose}><X size={18} /></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto py-3 flex flex-col gap-2">
+          {followingHandles.length === 0 ? (
+            <p className="text-xs text-slate-500 py-8 text-center">Follow creators to directly send them Sparks!</p>
+          ) : (
+            followingHandles.map((handle) => (
+              <div
+                key={handle}
+                className={`p-3 rounded-2xl flex items-center justify-between border ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51]" : "bg-slate-50 border-slate-200"}`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-[#F58F7C] to-[#F2C4CE] flex items-center justify-center font-bold text-xs text-[#2C2B30]">
+                    {handle.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="text-xs font-bold">@{handle}</span>
+                </div>
+                <button
+                  onClick={() => onSend(handle)}
+                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] text-xs font-bold flex items-center gap-1 hover:opacity-90"
+                >
+                  <Send size={12} /> Send
+                </button>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>
@@ -2468,7 +2562,7 @@ function EditProfileModal({ isDarkMode, currentProfile, onClose, onSave }) {
   );
 }
 
-// --- MESSAGES VIEW (WITH SEARCH FOR FOLLOWED USERS & ANY CREATOR) ---
+// --- MESSAGES VIEW ---
 function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, followingHandles, onSelectChat, onBack }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
@@ -2512,7 +2606,6 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
     fetchRecentConversations();
   }, [currentUser, currentHandle, activeChat]);
 
-  // Search through Followed Creators + Database Profiles
   useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchedFollowedUsers([]);
@@ -2629,7 +2722,6 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Search Input */}
       <div className="relative">
         <Search size={16} className={`absolute left-3.5 top-3 ${isDarkMode ? "text-slate-500" : "text-slate-400"}`} />
         <input
@@ -2646,7 +2738,6 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
         )}
       </div>
 
-      {/* Searched Creators Section */}
       {searchQuery.trim() && (
         <div className="flex flex-col gap-2">
           <span className="text-[11px] font-semibold text-[#F58F7C] px-1">Creators Matching Search</span>
@@ -2682,7 +2773,6 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
         </div>
       )}
 
-      {/* Recent Chats Section */}
       {!searchQuery.trim() && (
         <div className="flex flex-col gap-2 mt-1">
           <span className="text-[11px] font-semibold text-slate-400 px-1">Recent Chats</span>
