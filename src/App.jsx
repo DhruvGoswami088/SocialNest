@@ -27,7 +27,10 @@ import {
   Search,
   CheckCheck,
   UploadCloud,
-  Loader2
+  Loader2,
+  LogOut,
+  LogIn,
+  Video
 } from "lucide-react";
 
 // --- STORY MODES ---
@@ -69,37 +72,6 @@ const SAMPLE_STORIES = [
     category: "routine",
     caption: "Morning coffee & ocean walk ☕🌊",
   },
-  {
-    id: "s3",
-    username: "marcus_code",
-    userAvatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
-    mediaUrl: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=800",
-    category: "normal",
-    caption: "Check out the newest Sparks clips!",
-  },
-];
-
-const SAMPLE_SPARKS = [
-  {
-    id: "spark1",
-    username: "dev_pulse",
-    userAvatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
-    videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-tree-branches-in-the-breeze-1188-large.mp4",
-    caption: "Peaceful nature break between coding sessions 🍃 #nature #vibes",
-    song: "Original Audio - Nature Sounds",
-    likes: 1240,
-    comments: 48,
-  },
-  {
-    id: "spark2",
-    username: "neon_vibes",
-    userAvatar: "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150",
-    videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-hands-holding-a-glowing-light-bulb-42353-large.mp4",
-    caption: "When the React component finally renders with 0 errors 💡⚡ #codinglife",
-    song: "Synthwave Beats - Coding Radio",
-    likes: 3890,
-    comments: 112,
-  },
 ];
 
 const INITIAL_CHATS = [
@@ -117,53 +89,54 @@ const INITIAL_CHATS = [
       { id: "m3", sender: "them", text: "Did you push the updated story timer?", time: "10:42 AM" },
     ],
   },
-  {
-    id: "chat-2",
-    userId: "marcus_code",
-    username: "Marcus Chen",
-    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
-    online: false,
-    lastMessage: "Let's review the schema tonight.",
-    timestamp: "Yesterday",
-    messages: [
-      { id: "m1", sender: "them", text: "Yo, let's review the schema tonight.", time: "Yesterday" }
-    ],
-  },
 ];
 
-const USER_PROFILE = {
-  name: "Alex Rivera",
-  handle: "alex_dev",
-  avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300",
-  bio: "Building Social Nest 🛠️ | Full-stack explorer & UI enthusiast | Coffee first ☕",
-  stats: { posts: 24, followers: "4.2K", following: 389 },
-  posts: [
-    "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=400",
-    "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=400",
-    "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=400",
-    "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=400",
-    "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=400",
-    "https://images.unsplash.com/photo-1518770660439-4636190af475?w=400",
-  ],
-};
-
 export default function App() {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+
   const [activeTab, setActiveTab] = useState("home");
   const [selectedStoryIndex, setSelectedStoryIndex] = useState(null);
   const [activeFilter, setActiveFilter] = useState("all");
   const [posts, setPosts] = useState([]);
+  const [sparks, setSparks] = useState([]);
   const [loadingPosts, setLoadingPosts] = useState(true);
+  const [loadingSparks, setLoadingSparks] = useState(true);
   const [chats, setChats] = useState(INITIAL_CHATS);
   const [activeChat, setActiveChat] = useState(null);
   const [activeCommentPost, setActiveCommentPost] = useState(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isUploadSparkOpen, setIsUploadSparkOpen] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setCurrentUser(session?.user ?? null);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setCurrentUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const profileData = {
+    name: currentUser?.user_metadata?.full_name || "Guest Creator",
+    handle: currentUser?.user_metadata?.handle || (currentUser ? currentUser.email.split("@")[0] : "guest"),
+    avatar: currentUser?.user_metadata?.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300",
+    bio: currentUser ? "Building Social Nest 🛠️" : "Browse mode. Sign in to post and upload Sparks!",
+    stats: { posts: posts.filter((p) => p.username === (currentUser?.user_metadata?.handle || currentUser?.email?.split("@")[0])).length, followers: "120", following: 45 },
+    posts: [
+      "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=400",
+      "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=400",
+    ]
+  };
 
   const filteredStories =
     activeFilter === "all"
       ? SAMPLE_STORIES
       : SAMPLE_STORIES.filter((s) => s.category === activeFilter);
 
-  // Fetch real posts from Supabase
   const fetchPosts = async () => {
     try {
       setLoadingPosts(true);
@@ -178,7 +151,7 @@ export default function App() {
         id: p.id,
         type: p.post_type,
         username: p.user_handle,
-        userAvatar: p.user_avatar || USER_PROFILE.avatar,
+        userAvatar: p.user_avatar || profileData.avatar,
         timeAgo: new Date(p.created_at).toLocaleDateString([], {
           month: "short",
           day: "numeric",
@@ -202,24 +175,55 @@ export default function App() {
     }
   };
 
+  const fetchSparks = async () => {
+    try {
+      setLoadingSparks(true);
+      const { data, error } = await supabase
+        .from("sparks")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        setSparks(data);
+      } else {
+        setSparks([
+          {
+            id: "fallback-spark",
+            user_handle: "nest_official",
+            user_avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
+            video_url: "https://assets.mixkit.co/videos/preview/mixkit-tree-branches-in-the-breeze-1188-large.mp4",
+            caption: "Welcome to Sparks! Upload your own short vertical clips ⚡",
+            song_title: "Original Sound - Social Nest",
+            likes_count: 42
+          }
+        ]);
+      }
+    } catch (err) {
+      console.error("Error fetching sparks:", err.message);
+    } finally {
+      setLoadingSparks(false);
+    }
+  };
+
   useEffect(() => {
     fetchPosts();
+    fetchSparks();
   }, []);
 
   const handleAddNewPost = async (newPost) => {
     try {
-      const { error } = await supabase
-        .from("posts")
-        .insert([
-          {
-            user_handle: newPost.username,
-            user_avatar: newPost.userAvatar,
-            content: newPost.content,
-            media_url: newPost.mediaUrl,
-            post_type: newPost.type,
-            likes_count: 0,
-          },
-        ]);
+      const { error } = await supabase.from("posts").insert([
+        {
+          user_handle: profileData.handle,
+          user_avatar: profileData.avatar,
+          content: newPost.content,
+          media_url: newPost.mediaUrl,
+          post_type: newPost.type,
+          likes_count: 0,
+        },
+      ]);
 
       if (error) throw error;
 
@@ -231,10 +235,31 @@ export default function App() {
     }
   };
 
+  const handleAddSpark = async (sparkPayload) => {
+    try {
+      const { error } = await supabase.from("sparks").insert([
+        {
+          user_handle: profileData.handle,
+          user_avatar: profileData.avatar,
+          video_url: sparkPayload.videoUrl,
+          caption: sparkPayload.caption,
+          song_title: sparkPayload.songTitle || "Original Audio",
+          likes_count: 0
+        }
+      ]);
+
+      if (error) throw error;
+
+      fetchSparks();
+      setIsUploadSparkOpen(false);
+    } catch (err) {
+      console.error("Error uploading spark:", err.message);
+      alert("Failed to post spark: " + err.message);
+    }
+  };
+
   const handleLikePost = async (postId, currentLikes, isLiked) => {
     const updatedCount = isLiked ? Math.max(0, currentLikes - 1) : currentLikes + 1;
-
-    // Optimistic UI update
     setPosts((prev) =>
       prev.map((p) => (p.id === postId ? { ...p, likes: updatedCount } : p))
     );
@@ -249,14 +274,35 @@ export default function App() {
     }
   };
 
+  const handleLikeSpark = async (sparkId, currentLikes, isLiked) => {
+    const updatedCount = isLiked ? Math.max(0, currentLikes - 1) : currentLikes + 1;
+    setSparks((prev) =>
+      prev.map((s) => (s.id === sparkId ? { ...s, likes_count: updatedCount } : s))
+    );
+
+    try {
+      await supabase
+        .from("sparks")
+        .update({ likes_count: updatedCount })
+        .eq("id", sparkId);
+    } catch (err) {
+      console.error("Error liking spark:", err.message);
+    }
+  };
+
   const handleAddComment = async (postId, commentText) => {
+    if (!currentUser) {
+      setAuthModalOpen(true);
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from("comments")
         .insert([
           {
             post_id: postId,
-            user_handle: USER_PROFILE.handle,
+            user_handle: profileData.handle,
             content: commentText,
           },
         ])
@@ -318,13 +364,24 @@ export default function App() {
         <h1 className="text-xl font-black tracking-wider bg-gradient-to-r from-amber-400 via-orange-400 to-rose-400 bg-clip-text text-transparent">
           SOCIAL NEST
         </h1>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setActiveTab("sparks")}
-            className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1.5 transition-all hover:bg-amber-500/20"
-          >
-            <Zap size={13} className="fill-amber-400" /> Sparks
-          </button>
+        <div className="flex items-center gap-2.5">
+          {currentUser ? (
+            <button
+              onClick={() => setActiveTab("profile")}
+              className="flex items-center gap-1.5 py-1 px-2.5 rounded-full bg-slate-900 border border-slate-800 text-xs text-amber-400 font-semibold"
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              @{profileData.handle}
+            </button>
+          ) : (
+            <button
+              onClick={() => setAuthModalOpen(true)}
+              className="text-xs font-bold px-3 py-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-black flex items-center gap-1.5 transition-all shadow-md shadow-amber-500/10"
+            >
+              <LogIn size={13} /> Sign In
+            </button>
+          )}
+
           <button
             onClick={() => setActiveTab("messages")}
             className="relative p-1.5 text-slate-300 hover:text-white transition-colors"
@@ -335,7 +392,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main View Router */}
+      {/* Main Views */}
       <main className="w-full max-w-md px-3 pt-3">
         {activeTab === "home" && (
           <HomeView
@@ -345,18 +402,45 @@ export default function App() {
             onSelectStory={(idx) => setSelectedStoryIndex(idx)}
             posts={posts}
             loading={loadingPosts}
-            onOpenCreate={() => setIsCreateOpen(true)}
+            profileAvatar={profileData.avatar}
+            onOpenCreate={() => (!currentUser ? setAuthModalOpen(true) : setIsCreateOpen(true))}
             onOpenComments={(post) => setActiveCommentPost(post)}
             onLikePost={handleLikePost}
           />
         )}
 
         {activeTab === "sparks" && (
-          <div className="flex flex-col items-center">
-            <div className="w-full h-[78vh] overflow-y-scroll snap-y snap-mandatory rounded-3xl border border-slate-800 bg-black shadow-2xl">
-              {SAMPLE_SPARKS.map((spark) => (
-                <SparkCard key={spark.id} spark={spark} heightClass="h-[78vh]" />
-              ))}
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-full flex justify-between items-center px-1">
+              <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Trending Sparks</span>
+              <button
+                onClick={() => (!currentUser ? setAuthModalOpen(true) : setIsUploadSparkOpen(true))}
+                className="px-3 py-1 bg-amber-500 text-black rounded-full text-xs font-bold flex items-center gap-1 hover:bg-amber-400 transition-colors"
+              >
+                <Video size={13} /> Upload Clip
+              </button>
+            </div>
+
+            <div className="w-full h-[76vh] overflow-y-scroll snap-y snap-mandatory rounded-3xl border border-slate-800 bg-black shadow-2xl">
+              {loadingSparks ? (
+                <div className="h-full flex items-center justify-center text-xs text-slate-500">
+                  <Loader2 className="animate-spin mr-2" size={16} /> Loading Sparks...
+                </div>
+              ) : sparks.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-xs text-slate-500 gap-2">
+                  <Zap size={28} className="opacity-40 text-amber-500" />
+                  No clips found. Be the first to upload one!
+                </div>
+              ) : (
+                sparks.map((spark) => (
+                  <SparkCard
+                    key={spark.id}
+                    spark={spark}
+                    onLikeSpark={handleLikeSpark}
+                    heightClass="h-[76vh]"
+                  />
+                ))
+              )}
             </div>
           </div>
         )}
@@ -371,10 +455,16 @@ export default function App() {
           />
         )}
 
-        {activeTab === "profile" && <ProfileView user={USER_PROFILE} />}
+        {activeTab === "profile" && (
+          <ProfileView
+            user={profileData}
+            currentUser={currentUser}
+            onOpenAuth={() => setAuthModalOpen(true)}
+          />
+        )}
       </main>
 
-      {/* Bottom Navigation Dock */}
+      {/* Bottom Nav */}
       <nav className="fixed bottom-0 inset-x-0 bg-slate-950/95 backdrop-blur-xl border-t border-slate-900 px-6 py-2.5 z-40 flex justify-center">
         <div className="w-full max-w-md flex items-center justify-around">
           <button
@@ -404,7 +494,7 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => setIsCreateOpen(true)}
+            onClick={() => (!currentUser ? setAuthModalOpen(true) : setIsCreateOpen(true))}
             className="p-2.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-600 text-black font-bold shadow-lg shadow-amber-500/20 active:scale-95 transition-transform"
           >
             <PlusSquare size={20} />
@@ -435,11 +525,22 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Creation Modal */}
+      {/* Auth Modal */}
+      {authModalOpen && <AuthModal onClose={() => setAuthModalOpen(false)} />}
+
+      {/* Post Modal */}
       {isCreateOpen && (
         <CreatePostModal
           onClose={() => setIsCreateOpen(false)}
           onSubmit={handleAddNewPost}
+        />
+      )}
+
+      {/* Spark Upload Modal */}
+      {isUploadSparkOpen && (
+        <UploadSparkModal
+          onClose={() => setIsUploadSparkOpen(false)}
+          onSubmit={handleAddSpark}
         />
       )}
 
@@ -465,10 +566,9 @@ export default function App() {
 }
 
 // --- HOME VIEW ---
-function HomeView({ stories, activeFilter, setActiveFilter, onSelectStory, posts, loading, onOpenCreate, onOpenComments, onLikePost }) {
+function HomeView({ stories, activeFilter, setActiveFilter, onSelectStory, posts, loading, profileAvatar, onOpenCreate, onOpenComments, onLikePost }) {
   return (
     <div className="flex flex-col gap-4">
-      {/* Categorized Story Tray */}
       <div className="bg-slate-900/60 backdrop-blur-sm p-4 rounded-2xl border border-slate-800/80 shadow-lg">
         <div className="flex gap-2 pb-3 border-b border-slate-800/60 text-xs overflow-x-auto">
           <button
@@ -518,13 +618,12 @@ function HomeView({ stories, activeFilter, setActiveFilter, onSelectStory, posts
         </div>
       </div>
 
-      {/* Quick Text Bar */}
       <div
         onClick={onOpenCreate}
         className="bg-slate-900/50 border border-slate-800/80 rounded-2xl p-3.5 flex items-center gap-3 cursor-pointer hover:border-slate-700 transition-colors shadow-sm"
       >
         <img
-          src={USER_PROFILE.avatar}
+          src={profileAvatar}
           className="w-9 h-9 rounded-full object-cover border border-slate-800"
         />
         <span className="text-xs text-slate-400 flex-1">Share a thought or photo...</span>
@@ -534,7 +633,6 @@ function HomeView({ stories, activeFilter, setActiveFilter, onSelectStory, posts
         </div>
       </div>
 
-      {/* Feed List */}
       <div className="flex flex-col gap-3.5">
         {loading ? (
           <p className="text-xs text-slate-500 text-center py-8">Loading posts from database...</p>
@@ -594,7 +692,6 @@ function FeedCard({ post, onOpenComments, onLikePost }) {
         </div>
       )}
 
-      {/* Actions */}
       <div className="flex items-center justify-between pt-2 border-t border-slate-800/60 text-slate-400">
         <button
           onClick={toggleLike}
@@ -622,6 +719,383 @@ function FeedCard({ post, onOpenComments, onLikePost }) {
         <button className="hover:text-white transition-colors">
           <Share2 size={16} />
         </button>
+      </div>
+    </div>
+  );
+}
+
+// --- SPARK VIDEO CARD ---
+function SparkCard({ spark, onLikeSpark, heightClass = "h-[580px]" }) {
+  const videoRef = useRef(null);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [isMuted, setIsMuted] = useState(true);
+  const [liked, setLiked] = useState(false);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          videoRef.current?.play().catch(() => {});
+          setIsPlaying(true);
+        } else {
+          videoRef.current?.pause();
+          setIsPlaying(false);
+        }
+      },
+      { threshold: 0.6 }
+    );
+
+    if (videoRef.current) observer.observe(videoRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  const togglePlay = () => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.pause();
+        setIsPlaying(false);
+      } else {
+        videoRef.current.play();
+        setIsPlaying(true);
+      }
+    }
+  };
+
+  const handleLike = (e) => {
+    e.stopPropagation();
+    const nextLiked = !liked;
+    setLiked(nextLiked);
+    onLikeSpark(spark.id, spark.likes_count || 0, liked);
+  };
+
+  return (
+    <div className={`relative w-full ${heightClass} snap-start bg-slate-950 flex items-center justify-center overflow-hidden`}>
+      <video
+        ref={videoRef}
+        src={spark.video_url}
+        loop
+        playsInline
+        muted={isMuted}
+        onClick={togglePlay}
+        className="w-full h-full object-cover cursor-pointer"
+      />
+
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsMuted(!isMuted);
+        }}
+        className="absolute top-4 right-4 p-2 bg-black/50 backdrop-blur-md rounded-full text-white/90 hover:text-white z-10"
+      >
+        {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+      </button>
+
+      <div className="absolute right-3 bottom-12 z-10 flex flex-col items-center gap-5">
+        <button onClick={handleLike} className="flex flex-col items-center gap-1 group">
+          <div className={`p-2.5 rounded-full bg-black/40 backdrop-blur-md transition-transform group-hover:scale-110 ${liked ? "text-rose-500" : "text-white"}`}>
+            <Heart size={22} className={liked ? "fill-rose-500" : ""} />
+          </div>
+          <span className="text-[11px] font-semibold text-white/90">{spark.likes_count || 0}</span>
+        </button>
+
+        <button className="p-2.5 rounded-full bg-black/40 backdrop-blur-md text-white transition-transform hover:scale-110">
+          <Bookmark size={22} />
+        </button>
+
+        <button className="p-2.5 rounded-full bg-black/40 backdrop-blur-md text-white transition-transform hover:scale-110">
+          <Share2 size={22} />
+        </button>
+      </div>
+
+      <div className="absolute bottom-4 left-4 right-16 z-10 text-white flex flex-col gap-1.5 pointer-events-none">
+        <div className="flex items-center gap-2.5">
+          <img src={spark.user_avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"} className="w-8 h-8 rounded-full border border-white/40 object-cover" />
+          <span className="font-semibold text-sm">@{spark.user_handle}</span>
+        </div>
+        {spark.caption && <p className="text-xs text-slate-200 line-clamp-2 leading-relaxed">{spark.caption}</p>}
+        <div className="flex items-center gap-1.5 text-[11px] text-slate-300">
+          <Music size={11} />
+          <span className="truncate">{spark.song_title || "Original Audio"}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- UPLOAD SPARK MODAL ---
+function UploadSparkModal({ onClose, onSubmit }) {
+  const [caption, setCaption] = useState("");
+  const [songTitle, setSongTitle] = useState("");
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setSelectedFile(file);
+      setPreviewUrl(URL.createObjectURL(file));
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedFile) return;
+
+    setIsUploading(true);
+    try {
+      const fileExt = selectedFile.name.split(".").pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("sparks-media")
+        .upload(filePath, selectedFile);
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from("sparks-media")
+        .getPublicUrl(filePath);
+
+      await onSubmit({
+        videoUrl: publicUrlData.publicUrl,
+        caption: caption.trim(),
+        songTitle: songTitle.trim() || "Original Audio",
+      });
+    } catch (err) {
+      console.error("Upload error:", err.message);
+      alert("Failed to upload video: " + err.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl relative">
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white">
+          <X size={20} />
+        </button>
+
+        <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
+          <Zap className="fill-amber-400 text-amber-400" size={18} /> Upload a Spark Clip
+        </h3>
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          <input
+            type="file"
+            accept="video/*"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            className="hidden"
+          />
+
+          {!previewUrl ? (
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-slate-800 hover:border-amber-500/50 rounded-xl p-8 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors bg-slate-950/50"
+            >
+              <UploadCloud size={32} className="text-slate-500" />
+              <span className="text-xs text-slate-400 font-medium">Select a short vertical video (.mp4, .mov, .webm)</span>
+            </div>
+          ) : (
+            <div className="relative rounded-xl overflow-hidden border border-slate-800 h-44 bg-slate-950 flex items-center justify-center">
+              <video src={previewUrl} className="w-full h-full object-cover" muted loop autoPlay />
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFile(null);
+                  setPreviewUrl(null);
+                }}
+                className="absolute top-2 right-2 p-1.5 bg-black/70 hover:bg-black text-white rounded-full transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
+          <input
+            type="text"
+            value={caption}
+            onChange={(e) => setCaption(e.target.value)}
+            placeholder="Add a caption / hashtags..."
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
+          />
+
+          <input
+            type="text"
+            value={songTitle}
+            onChange={(e) => setSongTitle(e.target.value)}
+            placeholder="Audio track name (optional)..."
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
+          />
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="submit"
+              disabled={isUploading || !selectedFile}
+              className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black text-xs font-bold flex items-center gap-1.5 shadow-md shadow-amber-500/20"
+            >
+              {isUploading ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" /> Uploading Video...
+                </>
+              ) : (
+                <>
+                  <Video size={13} /> Publish Spark
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// --- AUTH MODAL ---
+function AuthModal({ onClose }) {
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [handle, setHandle] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setErrorMsg("");
+
+    try {
+      if (isSignUp) {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              handle: handle.toLowerCase().replace(/[^a-z0-9_]/g, "") || email.split("@")[0],
+              full_name: fullName || "Social Nest User",
+            },
+          },
+        });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (error) throw error;
+      }
+      onClose();
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative">
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white">
+          <X size={20} />
+        </button>
+
+        <h3 className="text-lg font-bold text-white mb-1">
+          {isSignUp ? "Create an account" : "Welcome back"}
+        </h3>
+        <p className="text-xs text-slate-400 mb-5">
+          {isSignUp
+            ? "Sign up to post, like, comment, and chat."
+            : "Sign in with your email and password to continue."}
+        </p>
+
+        {errorMsg && (
+          <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs rounded-xl">
+            {errorMsg}
+          </div>
+        )}
+
+        <form onSubmit={handleAuthSubmit} className="flex flex-col gap-3">
+          {isSignUp && (
+            <>
+              <div>
+                <label className="text-[11px] font-semibold text-slate-400 block mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="e.g. Alex Rivera"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold text-slate-400 block mb-1">Handle</label>
+                <input
+                  type="text"
+                  required
+                  value={handle}
+                  onChange={(e) => setHandle(e.target.value)}
+                  placeholder="e.g. alex_rivera"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+            </>
+          )}
+
+          <div>
+            <label className="text-[11px] font-semibold text-slate-400 block mb-1">Email</label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@domain.com"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-semibold text-slate-400 block mb-1">Password</label>
+            <input
+              type="password"
+              required
+              minLength={6}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full mt-2 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {loading && <Loader2 size={14} className="animate-spin" />}
+            {isSignUp ? "Sign Up" : "Sign In"}
+          </button>
+        </form>
+
+        <div className="mt-5 text-center">
+          <button
+            onClick={() => {
+              setIsSignUp(!isSignUp);
+              setErrorMsg("");
+            }}
+            className="text-xs text-slate-400 hover:text-amber-400 transition-colors"
+          >
+            {isSignUp
+              ? "Already have an account? Sign in"
+              : "Don't have an account? Sign up"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -808,7 +1282,7 @@ function CommentsDrawer({ post, onClose, onAddComment }) {
   );
 }
 
-// --- CREATE MODAL WITH DEVICE FILE UPLOAD ---
+// --- CREATE POST MODAL ---
 function CreatePostModal({ onClose, onSubmit }) {
   const [postType, setPostType] = useState("text");
   const [content, setContent] = useState("");
@@ -853,8 +1327,6 @@ function CreatePostModal({ onClose, onSubmit }) {
 
       await onSubmit({
         type: postType,
-        username: USER_PROFILE.handle,
-        userAvatar: USER_PROFILE.avatar,
         content: content.trim(),
         mediaUrl: uploadedMediaUrl,
       });
@@ -974,8 +1446,12 @@ function CreatePostModal({ onClose, onSubmit }) {
 }
 
 // --- PROFILE VIEW ---
-function ProfileView({ user }) {
+function ProfileView({ user, currentUser, onOpenAuth }) {
   const [profileTab, setProfileTab] = useState("posts");
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -1009,15 +1485,26 @@ function ProfileView({ user }) {
         </div>
 
         <div className="flex gap-2.5 mt-4">
-          <button className="flex-1 bg-white text-slate-950 font-semibold text-xs py-2 rounded-xl active:scale-[0.98] transition-transform">
-            Edit Profile
-          </button>
-          <button className="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs py-2 rounded-xl transition-colors">
-            Share Profile
-          </button>
-          <button className="p-2 bg-slate-800 rounded-xl text-slate-400 hover:text-white transition-colors">
-            <Settings size={16} />
-          </button>
+          {currentUser ? (
+            <>
+              <button className="flex-1 bg-white text-slate-950 font-semibold text-xs py-2 rounded-xl active:scale-[0.98] transition-transform">
+                Edit Profile
+              </button>
+              <button
+                onClick={handleSignOut}
+                className="px-3.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-semibold text-xs py-2 rounded-xl flex items-center gap-1.5 transition-colors"
+              >
+                <LogOut size={14} /> Log Out
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={onOpenAuth}
+              className="flex-1 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs py-2.5 rounded-xl shadow-lg shadow-amber-500/20 transition-all"
+            >
+              Sign In to Your Account
+            </button>
+          )}
         </div>
       </div>
 
@@ -1062,111 +1549,6 @@ function ProfileView({ user }) {
           No Sparks uploaded yet.
         </div>
       )}
-    </div>
-  );
-}
-
-// --- SPARK VIDEO CARD ---
-function SparkCard({ spark, heightClass = "h-[580px]" }) {
-  const videoRef = useRef(null);
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [isMuted, setIsMuted] = useState(true);
-  const [liked, setLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(spark.likes);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          videoRef.current?.play().catch(() => {});
-          setIsPlaying(true);
-        } else {
-          videoRef.current?.pause();
-          setIsPlaying(false);
-        }
-      },
-      { threshold: 0.6 }
-    );
-
-    if (videoRef.current) observer.observe(videoRef.current);
-    return () => observer.disconnect();
-  }, []);
-
-  const togglePlay = () => {
-    if (videoRef.current) {
-      if (isPlaying) {
-        videoRef.current.pause();
-        setIsPlaying(false);
-      } else {
-        videoRef.current.play();
-        setIsPlaying(true);
-      }
-    }
-  };
-
-  const handleLike = (e) => {
-    e.stopPropagation();
-    setLiked(!liked);
-    setLikeCount((prev) => (liked ? prev - 1 : prev + 1));
-  };
-
-  return (
-    <div className={`relative w-full ${heightClass} snap-start bg-slate-950 flex items-center justify-center overflow-hidden`}>
-      <video
-        ref={videoRef}
-        src={spark.videoUrl}
-        loop
-        playsInline
-        muted={isMuted}
-        onClick={togglePlay}
-        className="w-full h-full object-cover cursor-pointer"
-      />
-
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          setIsMuted(!isMuted);
-        }}
-        className="absolute top-4 right-4 p-2 bg-black/50 backdrop-blur-md rounded-full text-white/90 hover:text-white z-10"
-      >
-        {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
-      </button>
-
-      <div className="absolute right-3 bottom-12 z-10 flex flex-col items-center gap-5">
-        <button onClick={handleLike} className="flex flex-col items-center gap-1 group">
-          <div className={`p-2.5 rounded-full bg-black/40 backdrop-blur-md transition-transform group-hover:scale-110 ${liked ? "text-rose-500" : "text-white"}`}>
-            <Heart size={22} className={liked ? "fill-rose-500" : ""} />
-          </div>
-          <span className="text-[11px] font-semibold text-white/90">{likeCount}</span>
-        </button>
-
-        <button className="flex flex-col items-center gap-1 group">
-          <div className="p-2.5 rounded-full bg-black/40 backdrop-blur-md text-white transition-transform group-hover:scale-110">
-            <MessageCircle size={22} />
-          </div>
-          <span className="text-[11px] font-semibold text-white/90">{spark.comments}</span>
-        </button>
-
-        <button className="p-2.5 rounded-full bg-black/40 backdrop-blur-md text-white transition-transform hover:scale-110">
-          <Bookmark size={22} />
-        </button>
-
-        <button className="p-2.5 rounded-full bg-black/40 backdrop-blur-md text-white transition-transform hover:scale-110">
-          <Share2 size={22} />
-        </button>
-      </div>
-
-      <div className="absolute bottom-4 left-4 right-16 z-10 text-white flex flex-col gap-1.5 pointer-events-none">
-        <div className="flex items-center gap-2.5">
-          <img src={spark.userAvatar} className="w-8 h-8 rounded-full border border-white/40 object-cover" />
-          <span className="font-semibold text-sm">@{spark.username}</span>
-        </div>
-        <p className="text-xs text-slate-200 line-clamp-2 leading-relaxed">{spark.caption}</p>
-        <div className="flex items-center gap-1.5 text-[11px] text-slate-300">
-          <Music size={11} />
-          <span className="truncate">{spark.song}</span>
-        </div>
-      </div>
     </div>
   );
 }
