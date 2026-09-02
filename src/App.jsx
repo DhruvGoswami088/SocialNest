@@ -110,7 +110,7 @@ function playHapticSFX(type, enabled = true) {
   } catch (e) {}
 }
 
-// --- APP LOGO (HEADER & SPLASH ONLY) ---
+// --- APP LOGO ---
 function BrandLogo({ className = "w-8 h-8", animated = false }) {
   return (
     <svg
@@ -176,6 +176,21 @@ function BrandLoader({ message = "Loading Social Nest..." }) {
   );
 }
 
+// --- FLOATING HEARTS COMPONENT ---
+function FloatingHeartsOverlay({ trigger }) {
+  if (!trigger) return null;
+  return (
+    <div className="absolute inset-0 pointer-events-none z-40 overflow-hidden flex items-center justify-center">
+      <div className="animate-ping">
+        <Heart size={82} className="fill-[#F58F7C] text-[#F58F7C] drop-shadow-[0_0_20px_rgba(245,143,124,0.8)]" />
+      </div>
+      <div className="absolute bottom-1/4 animate-bounce">
+        <Heart size={36} className="fill-[#F2C4CE] text-[#F2C4CE] drop-shadow-lg opacity-80" />
+      </div>
+    </div>
+  );
+}
+
 const FILTER_STYLES = {
   normal: { label: "Normal", filter: "none" },
   warm: { label: "Tokyo Warm", filter: "contrast(115%) sepia(28%) saturate(140%)" },
@@ -205,7 +220,7 @@ const OFFICIAL_TEST_STORIES = [
     audioUrl: "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=lofi-study-112191.mp3",
     audioTitle: "Lofi Study Beats • Nest Sounds",
     category: "announcement",
-    caption: "🚀 Official Test Account #1: Testing Vaults & Clean Avatars!",
+    caption: "🚀 Official Test Account #1: Instant Optimistic UI & Spark Previews live!",
   },
   {
     id: "s2",
@@ -215,7 +230,7 @@ const OFFICIAL_TEST_STORIES = [
     audioUrl: "https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3?filename=chill-abstract-intention-12099.mp3",
     audioTitle: "Chill Urban Sunset • RetroWave",
     category: "routine",
-    caption: "Official Test Account #2: Adaptive media & video direct cards! ☕🌊",
+    caption: "Official Test Account #2: Tap any shared Spark in chat to watch fullscreen! ☕🌊",
   },
 ];
 
@@ -224,7 +239,7 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [profile, setProfile] = useState(null);
 
-  // Settings & Theme
+  // Settings & Engine State
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [dataSaverEnabled, setDataSaverEnabled] = useState(false);
@@ -232,6 +247,7 @@ export default function App() {
   const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [viewedUserProfile, setViewedUserProfile] = useState(null);
+  const [fullscreenSparkUrl, setFullscreenSparkUrl] = useState(null);
   const [toastMessage, setToastMessage] = useState("");
 
   // Views & Filters
@@ -415,9 +431,31 @@ export default function App() {
     }
   }, [currentUser]);
 
+  // --- OPTIMISTIC POST CREATION ---
   const handleAddNewPost = async (newPost) => {
+    playHapticSFX("upload", soundEnabled);
+    const tempId = `temp_${Date.now()}`;
+    const optimistic = {
+      id: tempId,
+      type: newPost.type,
+      username: currentHandle,
+      userAvatar: currentAvatar,
+      timeAgo: "Just now",
+      content: newPost.content,
+      mediaUrl: newPost.mediaUrl,
+      likes: 0,
+      visibility: newPost.visibility || "public",
+      audioTitle: newPost.audioTitle || null,
+      audioUrl: newPost.audioUrl || null,
+      filterStyle: newPost.filterStyle || "normal",
+      comments: [],
+    };
+
+    setPosts((prev) => [optimistic, ...prev]);
+    setIsStudioOpen(false);
+    showToast(newPost.visibility === "followers" ? "🔒 Posted to Vault!" : "🌐 Broadcasted to Explore!");
+
     try {
-      playHapticSFX("upload", soundEnabled);
       const { error } = await supabase.from("posts").insert([
         {
           user_handle: currentHandle,
@@ -434,24 +472,25 @@ export default function App() {
       ]);
       if (error) throw error;
       fetchPosts();
-      setIsStudioOpen(false);
-      showToast(newPost.visibility === "followers" ? "🔒 Shared to Followers Only (Vault)" : "🌐 Published to Public Explore!");
     } catch (err) {
+      setPosts((prev) => prev.filter((p) => p.id !== tempId));
       alert("Failed to post: " + err.message);
     }
   };
 
   const handleDeletePost = async (postId) => {
     if (!window.confirm("Are you sure you want to delete this post?")) return;
+    setPosts((prev) => prev.filter((p) => p.id !== postId));
     try {
       const { error } = await supabase.from("posts").delete().eq("id", postId);
       if (error) throw error;
-      setPosts((prev) => prev.filter((p) => p.id !== postId));
     } catch (err) {
+      fetchPosts();
       alert("Failed to delete post: " + err.message);
     }
   };
 
+  // --- 0MS OPTIMISTIC LIKE TOGGLE ---
   const handleLikePost = async (post) => {
     const isAlreadyLiked = likedPostIds.has(post.id);
     const updatedCount = isAlreadyLiked ? Math.max(0, post.likes - 1) : post.likes + 1;
@@ -506,18 +545,19 @@ export default function App() {
     }
   };
 
+  // --- 0MS OPTIMISTIC COMMENT ---
   const handleAddComment = async (target, commentText) => {
-    try {
-      if (target.type === "post") {
+    const tempComment = { id: `tc_${Date.now()}`, user: currentHandle, text: commentText };
+    playHapticSFX("send", soundEnabled);
+
+    if (target.type === "post") {
+      setPosts((prev) => prev.map((p) => (p.id === target.item.id ? { ...p, comments: [...p.comments, tempComment] } : p)));
+      setActiveCommentTarget((prev) => prev ? { ...prev, item: { ...prev.item, comments: [...prev.item.comments, tempComment] } } : null);
+      try {
         const { data, error } = await supabase.from("comments").insert([
           { post_id: target.item.id, user_handle: currentHandle, content: commentText }
         ]).select();
         if (error) throw error;
-
-        const created = { id: data[0].id, user: data[0].user_handle, text: data[0].content };
-        setPosts((prev) => prev.map((p) => (p.id === target.item.id ? { ...p, comments: [...p.comments, created] } : p)));
-        setActiveCommentTarget((prev) => prev ? { ...prev, item: { ...prev.item, comments: [...prev.item.comments, created] } } : null);
-
         if (target.item.username !== currentHandle) {
           await supabase.from("notifications").insert([{
             recipient_handle: target.item.username,
@@ -526,19 +566,19 @@ export default function App() {
             post_id: target.item.id,
           }]);
         }
-      } else if (target.type === "spark") {
-        const { data, error } = await supabase.from("spark_comments").insert([
-          { spark_id: String(target.item.id), user_handle: currentHandle, content: commentText }
-        ]).select();
-        if (error) throw error;
-
-        const created = { id: data[0].id, user: data[0].user_handle, text: data[0].content };
-        setSparks((prev) => prev.map((s) => (s.id === target.item.id ? { ...s, comments: [...(s.comments || []), created] } : s)));
-        setActiveCommentTarget((prev) => prev ? { ...prev, item: { ...prev.item, comments: [...(prev.item.comments || []), created] } } : null);
+      } catch (err) {
+        console.error("Comment err:", err);
       }
-      playHapticSFX("send", soundEnabled);
-    } catch (err) {
-      console.error("Error adding comment:", err);
+    } else if (target.type === "spark") {
+      setSparks((prev) => prev.map((s) => (s.id === target.item.id ? { ...s, comments: [...(s.comments || []), tempComment] } : s)));
+      setActiveCommentTarget((prev) => prev ? { ...prev, item: { ...prev.item, comments: [...(prev.item.comments || []), tempComment] } } : null);
+      try {
+        await supabase.from("spark_comments").insert([
+          { spark_id: String(target.item.id), user_handle: currentHandle, content: commentText }
+        ]);
+      } catch (err) {
+        console.error("Spark comment err:", err);
+      }
     }
   };
 
@@ -787,10 +827,12 @@ export default function App() {
             currentHandle={currentHandle}
             activeChat={activeChat}
             followingHandles={followingHandles}
+            soundEnabled={soundEnabled}
             onSelectChat={(chat) => {
               setActiveChat(chat);
               setUnreadMsgCount(0);
             }}
+            onWatchFullscreenSpark={(url) => setFullscreenSparkUrl(url)}
             onBack={() => setActiveChat(null)}
           />
         )}
@@ -865,7 +907,15 @@ export default function App() {
         </div>
       </nav>
 
-      {/* USER PROFILE MODAL (OVERFLOW UNCLIPPED & LAYER FIX) */}
+      {/* FULLSCREEN CLICKED SPARK PLAYER */}
+      {fullscreenSparkUrl && (
+        <FullscreenSparkModal
+          videoUrl={fullscreenSparkUrl}
+          onClose={() => setFullscreenSparkUrl(null)}
+        />
+      )}
+
+      {/* USER PROFILE MODAL */}
       {viewedUserProfile && (
         <UserProfileModal
           isDarkMode={isDarkMode}
@@ -903,7 +953,7 @@ export default function App() {
         />
       )}
 
-      {/* Studio Camera & Selective Audience Modal */}
+      {/* Studio Camera Modal */}
       {isStudioOpen && (
         <StudioCreatorModal
           isDarkMode={isDarkMode}
@@ -981,6 +1031,54 @@ export default function App() {
           onClose={() => setSelectedStoryIndex(null)}
         />
       )}
+    </div>
+  );
+}
+
+// --- FULLSCREEN SPARK MODAL (FROM CHAT EMBEDS) ---
+function FullscreenSparkModal({ videoUrl, onClose }) {
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
+  const videoRef = useRef(null);
+
+  const togglePlay = () => {
+    if (videoRef.current) {
+      if (isPlaying) { videoRef.current.pause(); setIsPlaying(false); }
+      else { videoRef.current.play(); setIsPlaying(true); }
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-0 sm:p-4">
+      <div className="relative w-full max-w-sm h-full sm:h-[85vh] bg-black sm:rounded-3xl overflow-hidden shadow-2xl flex items-center justify-center">
+        <video
+          ref={videoRef}
+          src={videoUrl}
+          autoPlay
+          loop
+          playsInline
+          muted={isMuted}
+          onClick={togglePlay}
+          className="w-full h-full object-cover cursor-pointer"
+        />
+
+        <div className="absolute top-4 inset-x-4 flex items-center justify-between z-20">
+          <button onClick={onClose} className="p-2 rounded-full bg-black/60 text-white backdrop-blur-md">
+            <X size={20} />
+          </button>
+          <button onClick={() => setIsMuted(!isMuted)} className="p-2 rounded-full bg-black/60 text-white backdrop-blur-md">
+            {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+          </button>
+        </div>
+
+        {!isPlaying && (
+          <div onClick={togglePlay} className="absolute inset-0 bg-black/30 backdrop-blur-[2px] flex items-center justify-center cursor-pointer">
+            <div className="p-4 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-[#F2C4CE]/40 text-[#F58F7C]">
+              <Play size={26} className="fill-[#F58F7C] translate-x-0.5" />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1215,14 +1313,14 @@ function HomeView({
   );
 }
 
-// --- GLASS VIDEO PLAYER ---
+// --- GLASS VIDEO PLAYER WITH FLOATING HEARTS ON DOUBLE TAP ---
 function GlassVideoPlayer({ src, audioUrl, isDarkMode, onDoubleTap }) {
   const videoRef = useRef(null);
   const audioRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [progress, setProgress] = useState(0);
-  const [showHeartBurst, setShowHeartBurst] = useState(false);
+  const [showHearts, setShowHearts] = useState(false);
   const lastTapRef = useRef(0);
 
   const togglePlay = () => {
@@ -1245,9 +1343,9 @@ function GlassVideoPlayer({ src, audioUrl, isDarkMode, onDoubleTap }) {
   const handleVideoTouch = () => {
     const now = Date.now();
     if (now - lastTapRef.current < 280) {
-      setShowHeartBurst(true);
+      setShowHearts(true);
       if (onDoubleTap) onDoubleTap();
-      setTimeout(() => setShowHeartBurst(false), 750);
+      setTimeout(() => setShowHearts(false), 800);
     } else {
       togglePlay();
     }
@@ -1273,15 +1371,8 @@ function GlassVideoPlayer({ src, audioUrl, isDarkMode, onDoubleTap }) {
         className="w-full max-h-96 object-cover cursor-pointer"
       />
 
-      {audioUrl && (
-        <audio ref={audioRef} src={audioUrl} loop muted={isMuted} />
-      )}
-
-      {showHeartBurst && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 animate-ping">
-          <Heart size={72} className="fill-[#F58F7C] text-[#F58F7C] drop-shadow-2xl" />
-        </div>
-      )}
+      {audioUrl && <audio ref={audioRef} src={audioUrl} loop muted={isMuted} />}
+      <FloatingHeartsOverlay trigger={showHearts} />
 
       {!isPlaying && (
         <div
@@ -1501,7 +1592,7 @@ function FormattedPostText({ text, onSelectTag, onOpenUserProfile, isDarkMode })
 // --- FEED CARD ---
 function FeedCard({ post, isDarkMode, isLiked, isBookmarked, currentHandle, isFollowing, onToggleFollow, onDeletePost, onOpenComments, onLikePost, onToggleBookmark, onSelectTag, onOpenUserProfile }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [showHeartBurst, setShowHeartBurst] = useState(false);
+  const [showHearts, setShowHearts] = useState(false);
   const lastTapRef = useRef(0);
   const isOwner = post.username === currentHandle;
   const isVideo = post.mediaUrl && (post.mediaUrl.endsWith(".mp4") || post.mediaUrl.endsWith(".webm") || post.mediaUrl.endsWith(".mov") || post.type === "video");
@@ -1510,8 +1601,8 @@ function FeedCard({ post, isDarkMode, isLiked, isBookmarked, currentHandle, isFo
     const now = Date.now();
     if (now - lastTapRef.current < 300) {
       if (!isLiked) onLikePost();
-      setShowHeartBurst(true);
-      setTimeout(() => setShowHeartBurst(false), 700);
+      setShowHearts(true);
+      setTimeout(() => setShowHearts(false), 800);
     }
     lastTapRef.current = now;
   };
@@ -1574,11 +1665,7 @@ function FeedCard({ post, isDarkMode, isLiked, isBookmarked, currentHandle, isFo
 
       {post.mediaUrl && (
         <div className="mb-3 relative" onClick={handleMediaTap}>
-          {showHeartBurst && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 animate-ping">
-              <Heart size={68} className="fill-[#F58F7C] text-[#F58F7C] drop-shadow-2xl" />
-            </div>
-          )}
+          <FloatingHeartsOverlay trigger={showHearts} />
 
           {isVideo ? (
             <GlassVideoPlayer src={post.mediaUrl} audioUrl={post.audioUrl} isDarkMode={isDarkMode} onDoubleTap={() => { if (!isLiked) onLikePost(); }} />
@@ -1618,7 +1705,7 @@ function FeedCard({ post, isDarkMode, isLiked, isBookmarked, currentHandle, isFo
   );
 }
 
-// --- FIXED USER PROFILE MODAL (NO MORE CUTOFF AVATAR) ---
+// --- USER PROFILE MODAL ---
 function UserProfileModal({ isDarkMode, profile, isFollowing, currentHandle, onToggleFollow, onDirectMessage, onClose, onSelectPost }) {
   const isOwner = profile.handle === currentHandle;
   const isPrivateLocked = profile.is_private && !isFollowing && !isOwner;
@@ -1632,7 +1719,7 @@ function UserProfileModal({ isDarkMode, profile, isFollowing, currentHandle, onT
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 isolate">
       <div className={`w-full max-w-sm rounded-3xl relative border shadow-2xl flex flex-col ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-[#D6D6D6]" : "bg-white border-[#D6D6D6] text-[#2C2B30]"}`}>
         
-        {/* Banner with Top Radius */}
+        {/* Banner with Rounded Top Corners */}
         <div className="h-32 w-full relative bg-gradient-to-r from-[#F58F7C] via-[#F2C4CE] to-[#4F4F51] rounded-t-3xl overflow-hidden shrink-0 z-0">
           {profile.banner_url && (
             <img src={profile.banner_url} className="w-full h-full object-cover" alt="Banner" />
@@ -1642,7 +1729,7 @@ function UserProfileModal({ isDarkMode, profile, isFollowing, currentHandle, onT
           </button>
         </div>
 
-        {/* Profile Info Container (Unclipped overflow allows avatar to pop through cleanly) */}
+        {/* Profile Info Container */}
         <div className="px-5 pb-5 pt-0 overflow-visible">
           <div className="flex justify-between items-end -mt-12 mb-3 relative z-30">
             <div className="p-1 rounded-full bg-[#2C2B30] ring-4 ring-[#2C2B30] shadow-2xl">
@@ -1688,7 +1775,6 @@ function UserProfileModal({ isDarkMode, profile, isFollowing, currentHandle, onT
 
           <p className="text-xs text-[#D6D6D6]/80 mt-2 leading-relaxed">{profile.bio || "Exploring Social Nest 🚀"}</p>
 
-          {/* Posts Feed Grid */}
           <div className="border-t border-[#4F4F51] mt-4 pt-3 max-h-56 overflow-y-auto">
             <div className="flex items-center justify-between mb-2.5">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
@@ -1752,8 +1838,6 @@ function ProfileView({ isDarkMode, user, posts, bookmarkedPostIds, onOpenSetting
   return (
     <div className="flex flex-col gap-4">
       <div className={`border rounded-3xl overflow-hidden shadow-sm relative ${isDarkMode ? "border-[#4F4F51] bg-[#2C2B30]/40" : "border-slate-200 bg-white"}`}>
-        
-        {/* Banner Section */}
         <div className="h-32 w-full relative bg-gradient-to-r from-[#F58F7C] via-[#F2C4CE] to-[#4F4F51] z-0">
           {user.banner ? (
             <img src={user.banner} className="w-full h-full object-cover" />
@@ -1772,7 +1856,6 @@ function ProfileView({ isDarkMode, user, posts, bookmarkedPostIds, onOpenSetting
           </button>
         </div>
 
-        {/* Content Section: Avatar Elevated Above Banner */}
         <div className="p-5 pt-0">
           <div className="flex items-end justify-between -mt-11 mb-3 relative z-30">
             <div className="p-1 rounded-full bg-[#2C2B30] ring-4 ring-[#2C2B30] shadow-xl">
@@ -2237,7 +2320,7 @@ function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUse
   const [isMuted, setIsMuted] = useState(false);
   const [liked, setLiked] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [showHeartBurst, setShowHeartBurst] = useState(false);
+  const [showHearts, setShowHearts] = useState(false);
   const lastTapRef = useRef(0);
 
   useEffect(() => {
@@ -2267,8 +2350,8 @@ function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUse
     if (now - lastTapRef.current < 280) {
       setLiked(true);
       playHapticSFX("like");
-      setShowHeartBurst(true);
-      setTimeout(() => setShowHeartBurst(false), 700);
+      setShowHearts(true);
+      setTimeout(() => setShowHearts(false), 800);
     } else {
       togglePlay();
     }
@@ -2295,11 +2378,7 @@ function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUse
         className="w-full h-full object-cover cursor-pointer"
       />
 
-      {showHeartBurst && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 animate-ping">
-          <Heart size={80} className="fill-[#F58F7C] text-[#F58F7C] drop-shadow-2xl" />
-        </div>
-      )}
+      <FloatingHeartsOverlay trigger={showHearts} />
 
       {!isPlaying && (
         <div onClick={togglePlay} className="absolute inset-0 bg-black/20 backdrop-blur-[1.5px] flex items-center justify-center cursor-pointer">
@@ -2721,8 +2800,8 @@ function EditProfileModal({ isDarkMode, currentProfile, onClose, onSave }) {
   );
 }
 
-// --- MESSAGES VIEW WITH SPARK VIDEO CARDS ---
-function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, followingHandles, onSelectChat, onBack }) {
+// --- MESSAGES VIEW WITH INTERACTIVE CLICKABLE SPARK CARDS ---
+function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, followingHandles, soundEnabled, onSelectChat, onWatchFullscreenSpark, onBack }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
   const [loadingChat, setLoadingChat] = useState(false);
@@ -2809,7 +2888,7 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${convId}` }, (payload) => {
         setMessages((prev) => (prev.some((m) => m.id === payload.new.id) ? prev : [...prev, payload.new]));
         if (payload.new.sender_handle !== currentHandle) {
-          playHapticSFX("receive");
+          playHapticSFX("receive", soundEnabled);
         }
       })
       .subscribe();
@@ -2821,17 +2900,35 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // 0ms Optimistic Message Send
   const handleSendSubmit = async (e) => {
     e.preventDefault();
     if (!inputText.trim() || !currentUser || !activeChat) return;
     const text = inputText.trim();
     setInputText("");
     const convId = getConversationId(currentHandle, activeChat.userId);
+    const tempId = `tmsg_${Date.now()}`;
 
-    playHapticSFX("send");
-    await supabase.from("messages").insert([
-      { conversation_id: convId, sender_handle: currentHandle, recipient_handle: activeChat.userId, content: text, is_read: false }
-    ]);
+    const optimisticMsg = {
+      id: tempId,
+      conversation_id: convId,
+      sender_handle: currentHandle,
+      recipient_handle: activeChat.userId,
+      content: text,
+      created_at: new Date().toISOString(),
+      is_read: false
+    };
+
+    setMessages((prev) => [...prev, optimisticMsg]);
+    playHapticSFX("send", soundEnabled);
+
+    try {
+      await supabase.from("messages").insert([
+        { conversation_id: convId, sender_handle: currentHandle, recipient_handle: activeChat.userId, content: text, is_read: false }
+      ]);
+    } catch (err) {
+      console.error("Failed to send message:", err);
+    }
   };
 
   if (activeChat) {
@@ -2866,14 +2963,28 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
               return (
                 <div key={msg.id} className={`flex flex-col max-w-[80%] ${isMe ? "self-end items-end" : "self-start items-start"}`}>
                   {isSparkShare && videoUrl ? (
-                    <div className={`p-2.5 rounded-2xl border shadow-lg flex flex-col gap-2 ${isMe ? "bg-gradient-to-br from-[#F58F7C]/20 to-[#F2C4CE]/10 border-[#F58F7C]/40" : isDarkMode ? "bg-[#4F4F51]/40 border-[#4F4F51]" : "bg-white border-slate-200"}`}>
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-[#F58F7C]">
-                        <Zap size={14} className="fill-[#F58F7C]" />
-                        <span>Shared Spark</span>
+                    <div
+                      onClick={() => onWatchFullscreenSpark(videoUrl)}
+                      className={`p-2.5 rounded-2xl border shadow-lg flex flex-col gap-2 cursor-pointer transition-transform hover:scale-[1.02] active:scale-[0.98] ${
+                        isMe
+                          ? "bg-gradient-to-br from-[#F58F7C]/20 to-[#F2C4CE]/10 border-[#F58F7C]/40"
+                          : isDarkMode
+                          ? "bg-[#4F4F51]/40 border-[#4F4F51]"
+                          : "bg-white border-slate-200"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-xs font-bold text-[#F58F7C]">
+                        <span className="flex items-center gap-1.5"><Zap size={14} className="fill-[#F58F7C]" /> Spark Clip</span>
+                        <span className="text-[10px] text-white/70">Tap to watch</span>
                       </div>
 
-                      <div className="relative w-48 h-64 rounded-xl overflow-hidden bg-black flex items-center justify-center">
+                      <div className="relative w-48 h-64 rounded-xl overflow-hidden bg-black flex items-center justify-center group/card">
                         <video src={videoUrl} className="w-full h-full object-cover" playsInline muted loop autoPlay />
+                        <div className="absolute inset-0 bg-black/20 group-hover/card:bg-black/10 flex items-center justify-center transition-colors">
+                          <div className="p-3 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-[#F58F7C]">
+                            <Play size={20} className="fill-[#F58F7C] translate-x-0.5" />
+                          </div>
+                        </div>
                       </div>
 
                       <p className="text-xs text-white font-medium line-clamp-1">{sparkCaption}</p>
