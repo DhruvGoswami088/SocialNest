@@ -1,0 +1,9 @@
+{
+  "short_name": "SocialNest",
+  "name": "Social Nest",
+  "start_url": "/",
+  "background_color": "#2C2B30",
+  "theme_color": "#2C2B30",
+  "display": "standalone",
+  "orientation": "portrait"
+}

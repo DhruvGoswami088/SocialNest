@@ -58,7 +58,8 @@ import {
   ShieldCheck,
   Info,
   Layers,
-  Award
+  Award,
+  Download
 } from "lucide-react";
 
 // --- WEB AUDIO API CHIMES ---
@@ -158,11 +159,19 @@ function DefaultAvatar({ className = "w-10 h-10" }) {
   );
 }
 
-function UserAvatar({ src, className = "w-10 h-10", alt = "" }) {
-  if (!src || src.trim() === "" || src.includes("placeholder") || src.includes("unsplash")) {
-    return <DefaultAvatar className={className} />;
-  }
-  return <img src={src} className={`${className} rounded-full object-cover shrink-0`} alt={alt} />;
+function UserAvatar({ src, className = "w-10 h-10", isOnline = false, alt = "" }) {
+  return (
+    <div className="relative inline-block shrink-0">
+      {!src || src.trim() === "" || src.includes("placeholder") || src.includes("unsplash") ? (
+        <DefaultAvatar className={className} />
+      ) : (
+        <img src={src} className={`${className} rounded-full object-cover shrink-0`} alt={alt} />
+      )}
+      {isOnline && (
+        <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-[#2C2B30] shadow-sm" />
+      )}
+    </div>
+  );
 }
 
 function BrandLoader({ message = "Loading Social Nest..." }) {
@@ -176,7 +185,6 @@ function BrandLoader({ message = "Loading Social Nest..." }) {
   );
 }
 
-// --- FLOATING HEARTS COMPONENT ---
 function FloatingHeartsOverlay({ trigger }) {
   if (!trigger) return null;
   return (
@@ -220,7 +228,7 @@ const OFFICIAL_TEST_STORIES = [
     audioUrl: "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=lofi-study-112191.mp3",
     audioTitle: "Lofi Study Beats • Nest Sounds",
     category: "announcement",
-    caption: "🚀 Official Test Account #1: Instant Optimistic UI & Spark Previews live!",
+    caption: "🚀 Official Test Account #1: Realtime Online Presence & PWA Shell active!",
   },
   {
     id: "s2",
@@ -230,7 +238,7 @@ const OFFICIAL_TEST_STORIES = [
     audioUrl: "https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3?filename=chill-abstract-intention-12099.mp3",
     audioTitle: "Chill Urban Sunset • RetroWave",
     category: "routine",
-    caption: "Official Test Account #2: Tap any shared Spark in chat to watch fullscreen! ☕🌊",
+    caption: "Official Test Account #2: Live typing indicators & mobile home screen app! ☕🌊",
   },
 ];
 
@@ -265,6 +273,9 @@ export default function App() {
   const [followingHandles, setFollowingHandles] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [unreadMsgCount, setUnreadMsgCount] = useState(0);
+
+  // Realtime Online Presence Map: Set of handles
+  const [onlineUsers, setOnlineUsers] = useState(new Set());
 
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [loadingSparks, setLoadingSparks] = useState(true);
@@ -326,6 +337,41 @@ export default function App() {
   const currentHandle = profile?.handle || (currentUser ? currentUser.email.split("@")[0] : "guest");
   const currentAvatar = profile?.avatar_url || null;
   const currentBanner = profile?.banner_url || null;
+
+  // --- SUPABASE PRESENCE (GLOBAL ONLINE CHANNEL) ---
+  useEffect(() => {
+    if (!currentHandle || currentHandle === "guest") return;
+
+    const presenceRoom = supabase.channel("global_presence", {
+      config: { presence: { key: currentHandle } },
+    });
+
+    presenceRoom
+      .on("presence", { event: "sync" }, () => {
+        const state = presenceRoom.presenceState();
+        const active = new Set(Object.keys(state));
+        setOnlineUsers(active);
+      })
+      .on("presence", { event: "join" }, ({ key }) => {
+        setOnlineUsers((prev) => new Set([...prev, key]));
+      })
+      .on("presence", { event: "leave" }, ({ key }) => {
+        setOnlineUsers((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      })
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await presenceRoom.track({ online_at: new Date().toISOString() });
+        }
+      });
+
+    return () => {
+      presenceRoom.unsubscribe();
+    };
+  }, [currentHandle]);
 
   const fetchUserEngagements = async () => {
     if (!currentHandle || currentHandle === "guest") return;
@@ -431,7 +477,6 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // --- OPTIMISTIC POST CREATION ---
   const handleAddNewPost = async (newPost) => {
     playHapticSFX("upload", soundEnabled);
     const tempId = `temp_${Date.now()}`;
@@ -490,7 +535,6 @@ export default function App() {
     }
   };
 
-  // --- 0MS OPTIMISTIC LIKE TOGGLE ---
   const handleLikePost = async (post) => {
     const isAlreadyLiked = likedPostIds.has(post.id);
     const updatedCount = isAlreadyLiked ? Math.max(0, post.likes - 1) : post.likes + 1;
@@ -545,7 +589,6 @@ export default function App() {
     }
   };
 
-  // --- 0MS OPTIMISTIC COMMENT ---
   const handleAddComment = async (target, commentText) => {
     const tempComment = { id: `tc_${Date.now()}`, user: currentHandle, text: commentText };
     playHapticSFX("send", soundEnabled);
@@ -760,6 +803,7 @@ export default function App() {
             posts={displayedPosts}
             likedPostIds={likedPostIds}
             bookmarkedPostIds={bookmarkedPostIds}
+            onlineUsers={onlineUsers}
             loading={loadingPosts}
             currentHandle={currentHandle}
             followingHandles={followingHandles}
@@ -776,6 +820,7 @@ export default function App() {
           <SearchView
             isDarkMode={isDarkMode}
             posts={posts}
+            onlineUsers={onlineUsers}
             followingHandles={followingHandles}
             currentHandle={currentHandle}
             searchQuery={feedSearchQuery}
@@ -827,6 +872,7 @@ export default function App() {
             currentHandle={currentHandle}
             activeChat={activeChat}
             followingHandles={followingHandles}
+            onlineUsers={onlineUsers}
             soundEnabled={soundEnabled}
             onSelectChat={(chat) => {
               setActiveChat(chat);
@@ -921,6 +967,7 @@ export default function App() {
           isDarkMode={isDarkMode}
           profile={viewedUserProfile}
           isFollowing={followingHandles.includes(viewedUserProfile.handle)}
+          isOnline={onlineUsers.has(viewedUserProfile.handle)}
           currentHandle={currentHandle}
           onToggleFollow={() => handleToggleFollow(viewedUserProfile.handle)}
           onDirectMessage={() => handleInitiateDirectMessage(viewedUserProfile.handle)}
@@ -1035,7 +1082,7 @@ export default function App() {
   );
 }
 
-// --- FULLSCREEN SPARK MODAL (FROM CHAT EMBEDS) ---
+// --- FULLSCREEN SPARK MODAL ---
 function FullscreenSparkModal({ videoUrl, onClose }) {
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
@@ -1234,6 +1281,7 @@ function HomeView({
   posts,
   likedPostIds,
   bookmarkedPostIds,
+  onlineUsers,
   loading,
   currentHandle,
   followingHandles,
@@ -1262,6 +1310,7 @@ function HomeView({
         <div className="flex gap-4 overflow-x-auto no-scrollbar">
           {stories.map((story, idx) => {
             const mode = STORY_MODES[story.category];
+            const isOnline = onlineUsers.has(story.username);
             return (
               <button
                 key={story.id}
@@ -1269,7 +1318,7 @@ function HomeView({
                 className="flex flex-col items-center gap-1.5 focus:outline-none flex-shrink-0 group"
               >
                 <div className={`p-[2.5px] rounded-full bg-gradient-to-tr ${mode.color} transition-all duration-300 group-hover:scale-105`}>
-                  <UserAvatar src={story.userAvatar} className="w-12 h-12 border-2 border-[#2C2B30]" />
+                  <UserAvatar src={story.userAvatar} isOnline={isOnline} className="w-12 h-12 border-2 border-[#2C2B30]" />
                 </div>
                 <span className={`text-[11px] truncate max-w-[65px] ${isDarkMode ? "text-[#D6D6D6] group-hover:text-[#F58F7C]" : "text-slate-700 group-hover:text-[#F58F7C]"}`}>
                   {story.username}
@@ -1296,6 +1345,7 @@ function HomeView({
               isDarkMode={isDarkMode}
               isLiked={likedPostIds.has(post.id)}
               isBookmarked={bookmarkedPostIds.has(post.id)}
+              isOnline={onlineUsers.has(post.username)}
               currentHandle={currentHandle}
               isFollowing={followingHandles.includes(post.username)}
               onToggleFollow={() => onToggleFollow(post.username)}
@@ -1403,7 +1453,7 @@ function GlassVideoPlayer({ src, audioUrl, isDarkMode, onDoubleTap }) {
 }
 
 // --- SEARCH VIEW ---
-function SearchView({ isDarkMode, posts, followingHandles, currentHandle, searchQuery, setSearchQuery, searchTag, setSearchTag, onSelectPost, onOpenUserProfile }) {
+function SearchView({ isDarkMode, posts, onlineUsers, followingHandles, currentHandle, searchQuery, setSearchQuery, searchTag, setSearchTag, onSelectPost, onOpenUserProfile }) {
   const [searchMode, setSearchMode] = useState("media");
   const [searchedUsers, setSearchedUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
@@ -1495,28 +1545,31 @@ function SearchView({ isDarkMode, posts, followingHandles, currentHandle, search
               {searchQuery.trim() ? "No creator found." : "Type a handle or name to find people."}
             </p>
           ) : (
-            searchedUsers.map((u) => (
-              <div
-                key={u.handle}
-                onClick={() => onOpenUserProfile(u.handle)}
-                className={`p-3 rounded-2xl border flex items-center gap-3 cursor-pointer transition-colors ${
-                  isDarkMode ? "bg-[#2C2B30] hover:bg-[#4F4F51]/40 border-[#4F4F51]" : "bg-white hover:bg-slate-100 border-[#D6D6D6]"
-                }`}
-              >
-                <UserAvatar src={u.avatar_url} className="w-10 h-10 border border-[#F2C4CE]/50" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <p className="text-xs font-bold truncate text-[#D6D6D6]">{u.full_name || u.handle}</p>
-                    {u.is_private && <Lock size={11} className="text-amber-400" />}
-                    {u.handle.startsWith("test_") && <Award size={11} className="text-[#F58F7C]" title="Official Test Account" />}
+            searchedUsers.map((u) => {
+              const isOnline = onlineUsers.has(u.handle);
+              return (
+                <div
+                  key={u.handle}
+                  onClick={() => onOpenUserProfile(u.handle)}
+                  className={`p-3 rounded-2xl border flex items-center gap-3 cursor-pointer transition-colors ${
+                    isDarkMode ? "bg-[#2C2B30] hover:bg-[#4F4F51]/40 border-[#4F4F51]" : "bg-white hover:bg-slate-100 border-[#D6D6D6]"
+                  }`}
+                >
+                  <UserAvatar src={u.avatar_url} isOnline={isOnline} className="w-10 h-10 border border-[#F2C4CE]/50" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-xs font-bold truncate text-[#D6D6D6]">{u.full_name || u.handle}</p>
+                      {u.is_private && <Lock size={11} className="text-amber-400" />}
+                      {u.handle.startsWith("test_") && <Award size={11} className="text-[#F58F7C]" title="Official Test Account" />}
+                    </div>
+                    <p className="text-[11px] text-[#F58F7C]">@{u.handle}</p>
                   </div>
-                  <p className="text-[11px] text-[#F58F7C]">@{u.handle}</p>
+                  <button className="px-3 py-1 rounded-xl bg-[#F58F7C]/15 border border-[#F58F7C]/30 text-[#F58F7C] text-xs font-bold">
+                    View
+                  </button>
                 </div>
-                <button className="px-3 py-1 rounded-xl bg-[#F58F7C]/15 border border-[#F58F7C]/30 text-[#F58F7C] text-xs font-bold">
-                  View
-                </button>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       ) : (
@@ -1590,7 +1643,7 @@ function FormattedPostText({ text, onSelectTag, onOpenUserProfile, isDarkMode })
 }
 
 // --- FEED CARD ---
-function FeedCard({ post, isDarkMode, isLiked, isBookmarked, currentHandle, isFollowing, onToggleFollow, onDeletePost, onOpenComments, onLikePost, onToggleBookmark, onSelectTag, onOpenUserProfile }) {
+function FeedCard({ post, isDarkMode, isLiked, isBookmarked, isOnline, currentHandle, isFollowing, onToggleFollow, onDeletePost, onOpenComments, onLikePost, onToggleBookmark, onSelectTag, onOpenUserProfile }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showHearts, setShowHearts] = useState(false);
   const lastTapRef = useRef(0);
@@ -1611,7 +1664,7 @@ function FeedCard({ post, isDarkMode, isLiked, isBookmarked, currentHandle, isFo
     <div className={`py-4 border-b ${isDarkMode ? "border-[#4F4F51]" : "border-slate-200"} relative`}>
       <div className="flex items-center justify-between mb-2.5">
         <div className="flex items-center gap-2.5 cursor-pointer" onClick={onOpenUserProfile}>
-          <UserAvatar src={post.userAvatar} className="w-9 h-9 border border-[#F2C4CE]/40" />
+          <UserAvatar src={post.userAvatar} isOnline={isOnline} className="w-9 h-9 border border-[#F2C4CE]/40" />
           <div>
             <div className="flex items-center gap-2">
               <span className={`text-xs font-bold hover:underline ${isDarkMode ? "text-[#D6D6D6]" : "text-slate-900"}`}>@{post.username}</span>
@@ -1706,7 +1759,7 @@ function FeedCard({ post, isDarkMode, isLiked, isBookmarked, currentHandle, isFo
 }
 
 // --- USER PROFILE MODAL ---
-function UserProfileModal({ isDarkMode, profile, isFollowing, currentHandle, onToggleFollow, onDirectMessage, onClose, onSelectPost }) {
+function UserProfileModal({ isDarkMode, profile, isFollowing, isOnline, currentHandle, onToggleFollow, onDirectMessage, onClose, onSelectPost }) {
   const isOwner = profile.handle === currentHandle;
   const isPrivateLocked = profile.is_private && !isFollowing && !isOwner;
 
@@ -1733,7 +1786,7 @@ function UserProfileModal({ isDarkMode, profile, isFollowing, currentHandle, onT
         <div className="px-5 pb-5 pt-0 overflow-visible">
           <div className="flex justify-between items-end -mt-12 mb-3 relative z-30">
             <div className="p-1 rounded-full bg-[#2C2B30] ring-4 ring-[#2C2B30] shadow-2xl">
-              <UserAvatar src={profile.avatar_url} className="w-20 h-20 border-2 border-[#F58F7C]" />
+              <UserAvatar src={profile.avatar_url} isOnline={isOnline} className="w-20 h-20 border-2 border-[#F58F7C]" />
             </div>
 
             <div className="flex gap-2 mb-1">
@@ -2800,8 +2853,8 @@ function EditProfileModal({ isDarkMode, currentProfile, onClose, onSave }) {
   );
 }
 
-// --- MESSAGES VIEW WITH INTERACTIVE CLICKABLE SPARK CARDS ---
-function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, followingHandles, soundEnabled, onSelectChat, onWatchFullscreenSpark, onBack }) {
+// --- MESSAGES VIEW WITH REALTIME TYPING & ONLINE PRESENCE ---
+function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, followingHandles, onlineUsers, soundEnabled, onSelectChat, onWatchFullscreenSpark, onBack }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
   const [loadingChat, setLoadingChat] = useState(false);
@@ -2809,7 +2862,11 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
   const [recentConversations, setRecentConversations] = useState([]);
   const [searchedFollowedUsers, setSearchedFollowedUsers] = useState([]);
   const [isSearchingUsers, setIsSearchingUsers] = useState(false);
+  const [partnerIsTyping, setPartnerIsTyping] = useState(false);
+
   const messagesEndRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+  const activeRoomRef = useRef(null);
 
   const getConversationId = (userA, userB) => [userA, userB].sort().join("_");
 
@@ -2869,6 +2926,7 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
     return () => clearTimeout(debounce);
   }, [searchQuery, currentHandle]);
 
+  // Active Chat Message Stream + Typing Presence Channel
   useEffect(() => {
     if (!activeChat || !currentUser) return;
     const convId = getConversationId(currentHandle, activeChat.userId);
@@ -2883,7 +2941,8 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
 
     loadMessages();
 
-    const channel = supabase
+    // Channel for Realtime Messages + Ephemeral Typing Indicators
+    const chatRoom = supabase
       .channel(`chat_${convId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${convId}` }, (payload) => {
         setMessages((prev) => (prev.some((m) => m.id === payload.new.id) ? prev : [...prev, payload.new]));
@@ -2891,16 +2950,38 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
           playHapticSFX("receive", soundEnabled);
         }
       })
+      .on("broadcast", { event: "typing" }, ({ payload }) => {
+        if (payload.user === activeChat.userId) {
+          setPartnerIsTyping(true);
+          if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+          typingTimeoutRef.current = setTimeout(() => setPartnerIsTyping(false), 2000);
+        }
+      })
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    activeRoomRef.current = chatRoom;
+
+    return () => {
+      chatRoom.unsubscribe();
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    };
   }, [activeChat, currentUser, currentHandle]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, partnerIsTyping]);
 
-  // 0ms Optimistic Message Send
+  const handleInputChange = (e) => {
+    setInputText(e.target.value);
+    if (activeRoomRef.current) {
+      activeRoomRef.current.send({
+        type: "broadcast",
+        event: "typing",
+        payload: { user: currentHandle },
+      });
+    }
+  };
+
   const handleSendSubmit = async (e) => {
     e.preventDefault();
     if (!inputText.trim() || !currentUser || !activeChat) return;
@@ -2932,14 +3013,23 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
   };
 
   if (activeChat) {
+    const isPartnerOnline = onlineUsers.has(activeChat.userId);
+
     return (
       <div className={`flex flex-col h-[78vh] rounded-3xl overflow-hidden border shadow-2xl ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-slate-200"}`}>
         <div className={`px-4 py-3 border-b flex items-center gap-3 ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51]" : "bg-slate-100 border-slate-200"}`}>
           <button onClick={onBack} className="p-1 text-slate-400 hover:text-white"><ArrowLeft size={18} /></button>
-          <UserAvatar src={activeChat.avatar} className="w-8 h-8" />
+          <UserAvatar src={activeChat.avatar} isOnline={isPartnerOnline} className="w-8 h-8" />
           <div className="flex-1 min-w-0">
             <p className={`text-xs font-bold leading-tight truncate ${isDarkMode ? "text-white" : "text-slate-900"}`}>{activeChat.username}</p>
-            <p className="text-[10px] text-[#F58F7C] font-medium">@{activeChat.userId}</p>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-[#F58F7C] font-medium">@{activeChat.userId}</span>
+              {partnerIsTyping ? (
+                <span className="text-[10px] text-emerald-400 font-bold animate-pulse">typing...</span>
+              ) : isPartnerOnline ? (
+                <span className="text-[10px] text-emerald-400 font-semibold">• Active now</span>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -2999,6 +3089,12 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
               );
             })
           )}
+          {partnerIsTyping && (
+            <div className="self-start bg-[#4F4F51]/40 border border-[#4F4F51] px-3 py-1.5 rounded-2xl text-[11px] text-emerald-400 font-semibold flex items-center gap-1.5 animate-pulse">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" />
+              <span>{activeChat.username} is typing...</span>
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
 
@@ -3006,7 +3102,7 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
           <input
             type="text"
             value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
+            onChange={handleInputChange}
             placeholder={`Message @${activeChat.userId}...`}
             className={`flex-1 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51] text-white" : "bg-slate-100 border-slate-200 text-slate-900"}`}
           />
@@ -3044,6 +3140,7 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
           ) : (
             searchedFollowedUsers.map((u) => {
               const isFollowed = followingHandles.includes(u.handle);
+              const isOnline = onlineUsers.has(u.handle);
               return (
                 <div
                   key={u.handle}
@@ -3051,7 +3148,7 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
                   className={`p-3 rounded-2xl flex items-center justify-between cursor-pointer border transition-all ${isDarkMode ? "bg-[#4F4F51]/30 hover:bg-[#4F4F51]/60 border-[#4F4F51]" : "bg-white hover:bg-slate-100 border-slate-200"}`}
                 >
                   <div className="flex items-center gap-3">
-                    <UserAvatar src={u.avatar_url} className="w-9 h-9" />
+                    <UserAvatar src={u.avatar_url} isOnline={isOnline} className="w-9 h-9" />
                     <div>
                       <p className="text-xs font-bold text-white">{u.full_name || u.handle}</p>
                       <p className="text-[10px] text-[#F58F7C]">@{u.handle}</p>
@@ -3075,29 +3172,32 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
           {recentConversations.length === 0 ? (
             <div className="text-center py-12 text-xs text-slate-500">No conversations yet.</div>
           ) : (
-            recentConversations.map((chat) => (
-              <div
-                key={chat.userId}
-                onClick={() => onSelectChat(chat)}
-                className={`p-3.5 rounded-2xl flex items-center gap-3.5 cursor-pointer border transition-all ${
-                  isDarkMode ? "bg-[#2C2B30] hover:bg-[#4F4F51]/40 border-[#4F4F51]" : "bg-white hover:bg-slate-100 border-slate-200"
-                }`}
-              >
-                <div className="relative">
-                  <UserAvatar src={chat.avatar} className="w-11 h-11" />
-                  {chat.unread && <span className="absolute top-0 right-0 w-3 h-3 bg-[#F58F7C] rounded-full border-2 border-black" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <p className={`text-xs font-bold truncate ${isDarkMode ? "text-white" : "text-slate-900"}`}>@{chat.userId}</p>
-                    <span className="text-[10px] text-slate-500">{chat.time}</span>
+            recentConversations.map((chat) => {
+              const isOnline = onlineUsers.has(chat.userId);
+              return (
+                <div
+                  key={chat.userId}
+                  onClick={() => onSelectChat(chat)}
+                  className={`p-3.5 rounded-2xl flex items-center gap-3.5 cursor-pointer border transition-all ${
+                    isDarkMode ? "bg-[#2C2B30] hover:bg-[#4F4F51]/40 border-[#4F4F51]" : "bg-white hover:bg-slate-100 border-slate-200"
+                  }`}
+                >
+                  <div className="relative">
+                    <UserAvatar src={chat.avatar} isOnline={isOnline} className="w-11 h-11" />
+                    {chat.unread && <span className="absolute top-0 right-0 w-3 h-3 bg-[#F58F7C] rounded-full border-2 border-black" />}
                   </div>
-                  <p className={`text-xs truncate mt-0.5 ${chat.unread ? "text-[#F58F7C] font-bold" : "text-slate-400"}`}>
-                    {chat.lastMessage}
-                  </p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <p className={`text-xs font-bold truncate ${isDarkMode ? "text-white" : "text-slate-900"}`}>@{chat.userId}</p>
+                      <span className="text-[10px] text-slate-500">{chat.time}</span>
+                    </div>
+                    <p className={`text-xs truncate mt-0.5 ${chat.unread ? "text-[#F58F7C] font-bold" : "text-slate-400"}`}>
+                      {chat.lastMessage}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}
