@@ -74,21 +74,25 @@ const SAMPLE_STORIES = [
   },
 ];
 
-const INITIAL_CHATS = [
+const SAMPLE_CONTACTS = [
   {
-    id: "chat-1",
     userId: "sarah_m",
     username: "Sarah Miller",
     avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150",
     online: true,
-    lastMessage: "Did you push the updated story timer?",
-    timestamp: "10:42 AM",
-    messages: [
-      { id: "m1", sender: "them", text: "Hey! Saw the new Sparks icon update 👀", time: "10:40 AM" },
-      { id: "m2", sender: "me", text: "Yeah! The lightning bolt feels much snappier.", time: "10:41 AM" },
-      { id: "m3", sender: "them", text: "Did you push the updated story timer?", time: "10:42 AM" },
-    ],
   },
+  {
+    userId: "marcus_code",
+    username: "Marcus Chen",
+    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
+    online: false,
+  },
+  {
+    userId: "nest_bot",
+    username: "SocialNest Support",
+    avatar: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150",
+    online: true,
+  }
 ];
 
 export default function App() {
@@ -102,7 +106,6 @@ export default function App() {
   const [sparks, setSparks] = useState([]);
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [loadingSparks, setLoadingSparks] = useState(true);
-  const [chats, setChats] = useState(INITIAL_CHATS);
   const [activeChat, setActiveChat] = useState(null);
   const [activeCommentPost, setActiveCommentPost] = useState(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -124,7 +127,7 @@ export default function App() {
     name: currentUser?.user_metadata?.full_name || "Guest Creator",
     handle: currentUser?.user_metadata?.handle || (currentUser ? currentUser.email.split("@")[0] : "guest"),
     avatar: currentUser?.user_metadata?.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300",
-    bio: currentUser ? "Building Social Nest 🛠️" : "Browse mode. Sign in to post and upload Sparks!",
+    bio: currentUser ? "Building Social Nest 🛠️" : "Browse mode. Sign in to post, like, and chat!",
     stats: { posts: posts.filter((p) => p.username === (currentUser?.user_metadata?.handle || currentUser?.email?.split("@")[0])).length, followers: "120", following: 45 },
     posts: [
       "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=400",
@@ -334,29 +337,6 @@ export default function App() {
     }
   };
 
-  const handleSendMessage = (chatId, text) => {
-    const updatedChats = chats.map((chat) => {
-      if (chat.id === chatId) {
-        const newMsg = {
-          id: "msg-" + Date.now(),
-          sender: "me",
-          text,
-          time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        };
-        return {
-          ...chat,
-          lastMessage: text,
-          timestamp: "Just now",
-          messages: [...chat.messages, newMsg],
-        };
-      }
-      return chat;
-    });
-
-    setChats(updatedChats);
-    setActiveChat(updatedChats.find((c) => c.id === chatId));
-  };
-
   return (
     <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center pb-24 selection:bg-amber-500 selection:text-black">
       {/* Top Navbar */}
@@ -447,11 +427,12 @@ export default function App() {
 
         {activeTab === "messages" && (
           <MessagesView
-            chats={chats}
+            currentUser={currentUser}
+            currentHandle={profileData.handle}
             activeChat={activeChat}
             onSelectChat={(chat) => setActiveChat(chat)}
             onBack={() => setActiveChat(null)}
-            onSend={handleSendMessage}
+            onOpenAuth={() => setAuthModalOpen(true)}
           />
         )}
 
@@ -525,42 +506,12 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Auth Modal */}
+      {/* Modals */}
       {authModalOpen && <AuthModal onClose={() => setAuthModalOpen(false)} />}
-
-      {/* Post Modal */}
-      {isCreateOpen && (
-        <CreatePostModal
-          onClose={() => setIsCreateOpen(false)}
-          onSubmit={handleAddNewPost}
-        />
-      )}
-
-      {/* Spark Upload Modal */}
-      {isUploadSparkOpen && (
-        <UploadSparkModal
-          onClose={() => setIsUploadSparkOpen(false)}
-          onSubmit={handleAddSpark}
-        />
-      )}
-
-      {/* Comments Drawer */}
-      {activeCommentPost && (
-        <CommentsDrawer
-          post={activeCommentPost}
-          onClose={() => setActiveCommentPost(null)}
-          onAddComment={handleAddComment}
-        />
-      )}
-
-      {/* Fullscreen Story Viewer */}
-      {selectedStoryIndex !== null && (
-        <StoryViewerModal
-          stories={filteredStories}
-          initialIndex={selectedStoryIndex}
-          onClose={() => setSelectedStoryIndex(null)}
-        />
-      )}
+      {isCreateOpen && <CreatePostModal onClose={() => setIsCreateOpen(false)} onSubmit={handleAddNewPost} />}
+      {isUploadSparkOpen && <UploadSparkModal onClose={() => setIsUploadSparkOpen(false)} onSubmit={handleAddSpark} />}
+      {activeCommentPost && <CommentsDrawer post={activeCommentPost} onClose={() => setActiveCommentPost(null)} onAddComment={handleAddComment} />}
+      {selectedStoryIndex !== null && <StoryViewerModal stories={filteredStories} initialIndex={selectedStoryIndex} onClose={() => setSelectedStoryIndex(null)} />}
     </div>
   );
 }
@@ -724,7 +675,232 @@ function FeedCard({ post, onOpenComments, onLikePost }) {
   );
 }
 
-// --- SPARK VIDEO CARD ---
+// --- REAL-TIME MESSAGING COMPONENT ---
+function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, onBack, onOpenAuth }) {
+  const [messages, setMessages] = useState([]);
+  const [inputText, setInputText] = useState("");
+  const [loadingChat, setLoadingChat] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  // Derive conversation ID deterministically so both users share the exact same room
+  const getConversationId = (userA, userB) => {
+    return [userA, userB].sort().join("_");
+  };
+
+  // Realtime subscription and message fetching
+  useEffect(() => {
+    if (!activeChat || !currentUser) return;
+
+    const convId = getConversationId(currentHandle, activeChat.userId);
+    setLoadingChat(true);
+
+    // 1. Initial historical fetch
+    const fetchChatMessages = async () => {
+      const { data, error } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("conversation_id", convId)
+        .order("created_at", { ascending: true });
+
+      if (!error && data) {
+        setMessages(data);
+      }
+      setLoadingChat(false);
+    };
+
+    fetchChatMessages();
+
+    // 2. Realtime listener for incoming messages in this conversation
+    const channel = supabase
+      .channel(`chat_${convId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${convId}`,
+        },
+        (payload) => {
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === payload.new.id)) return prev;
+            return [...prev, payload.new];
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activeChat, currentUser, currentHandle]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const handleSendSubmit = async (e) => {
+    e.preventDefault();
+    if (!inputText.trim() || !currentUser || !activeChat) return;
+
+    const messageText = inputText.trim();
+    setInputText("");
+
+    const convId = getConversationId(currentHandle, activeChat.userId);
+
+    const { error } = await supabase.from("messages").insert([
+      {
+        conversation_id: convId,
+        sender_handle: currentHandle,
+        recipient_handle: activeChat.userId,
+        content: messageText,
+      },
+    ]);
+
+    if (error) {
+      console.error("Error sending message:", error.message);
+    }
+  };
+
+  if (!currentUser) {
+    return (
+      <div className="py-20 text-center flex flex-col items-center gap-3">
+        <Mail size={36} className="text-amber-400 opacity-60" />
+        <h3 className="text-sm font-bold">Sign In to Send Messages</h3>
+        <p className="text-xs text-slate-400 max-w-xs">
+          Connect with friends and chat in real-time.
+        </p>
+        <button
+          onClick={onOpenAuth}
+          className="mt-2 px-5 py-2 bg-amber-500 text-black font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20"
+        >
+          Sign In
+        </button>
+      </div>
+    );
+  }
+
+  if (activeChat) {
+    return (
+      <div className="flex flex-col h-[78vh] bg-slate-900/40 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
+        <div className="px-4 py-3 bg-slate-900/90 border-b border-slate-800 flex items-center gap-3">
+          <button onClick={onBack} className="p-1 text-slate-400 hover:text-white">
+            <ArrowLeft size={18} />
+          </button>
+          <div className="relative">
+            <img src={activeChat.avatar} className="w-8 h-8 rounded-full object-cover" />
+            {activeChat.online && (
+              <span className="absolute bottom-0 right-0 w-2 h-2 bg-emerald-500 rounded-full border border-slate-900" />
+            )}
+          </div>
+          <div>
+            <p className="text-xs font-bold leading-tight">{activeChat.username}</p>
+            <p className="text-[10px] text-emerald-400 font-medium">Realtime Connected</p>
+          </div>
+        </div>
+
+        <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3">
+          {loadingChat ? (
+            <div className="h-full flex items-center justify-center text-xs text-slate-500">
+              <Loader2 size={16} className="animate-spin mr-2" /> Loading chat history...
+            </div>
+          ) : messages.length === 0 ? (
+            <p className="text-xs text-slate-500 text-center py-12">
+              Say hello! Messages will update live instantly.
+            </p>
+          ) : (
+            messages.map((msg) => {
+              const isMe = msg.sender_handle === currentHandle;
+              return (
+                <div
+                  key={msg.id}
+                  className={`flex flex-col max-w-[75%] ${isMe ? "self-end items-end" : "self-start items-start"}`}
+                >
+                  <div
+                    className={`p-3 rounded-2xl text-xs leading-relaxed ${
+                      isMe
+                        ? "bg-gradient-to-r from-amber-500 to-orange-500 text-black font-medium rounded-tr-none"
+                        : "bg-slate-800 text-white rounded-tl-none border border-slate-700/60"
+                    }`}
+                  >
+                    {msg.content}
+                  </div>
+                  <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-500">
+                    <span>
+                      {new Date(msg.created_at).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                    {isMe && <CheckCheck size={11} className="text-amber-500" />}
+                  </div>
+                </div>
+              );
+            })
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        <form onSubmit={handleSendSubmit} className="p-3 bg-slate-950/80 border-t border-slate-800 flex items-center gap-2">
+          <input
+            type="text"
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            placeholder={`Message @${activeChat.userId}...`}
+            className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+          />
+          <button
+            type="submit"
+            disabled={!inputText.trim()}
+            className="p-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black rounded-xl transition-all"
+          >
+            <Send size={15} />
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="relative">
+        <Search size={16} className="absolute left-3.5 top-3 text-slate-500" />
+        <input
+          type="text"
+          placeholder="Search conversations..."
+          className="w-full bg-slate-900/60 border border-slate-800 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500"
+        />
+      </div>
+
+      <div className="flex flex-col gap-2 mt-1">
+        {SAMPLE_CONTACTS.map((contact) => (
+          <div
+            key={contact.userId}
+            onClick={() => onSelectChat(contact)}
+            className="bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800/70 p-3.5 rounded-2xl flex items-center gap-3.5 cursor-pointer transition-all active:scale-[0.99]"
+          >
+            <div className="relative">
+              <img src={contact.avatar} className="w-11 h-11 rounded-full object-cover border border-slate-800" />
+              {contact.online && (
+                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-slate-950" />
+              )}
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold text-white truncate">{contact.username}</p>
+                <span className="text-[10px] text-emerald-400 font-medium">Live</span>
+              </div>
+              <p className="text-xs text-slate-400 truncate mt-0.5">@{contact.userId}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// --- SPARK CARD ---
 function SparkCard({ spark, onLikeSpark, heightClass = "h-[580px]" }) {
   const videoRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -1101,127 +1277,6 @@ function AuthModal({ onClose }) {
   );
 }
 
-// --- MESSAGES VIEW ---
-function MessagesView({ chats, activeChat, onSelectChat, onBack, onSend }) {
-  const [inputText, setInputText] = useState("");
-  const messagesEndRef = useRef(null);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [activeChat?.messages]);
-
-  const handleSendSubmit = (e) => {
-    e.preventDefault();
-    if (!inputText.trim()) return;
-    onSend(activeChat.id, inputText.trim());
-    setInputText("");
-  };
-
-  if (activeChat) {
-    return (
-      <div className="flex flex-col h-[78vh] bg-slate-900/40 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
-        <div className="px-4 py-3 bg-slate-900/90 border-b border-slate-800 flex items-center gap-3">
-          <button onClick={onBack} className="p-1 text-slate-400 hover:text-white">
-            <ArrowLeft size={18} />
-          </button>
-          <div className="relative">
-            <img src={activeChat.avatar} className="w-8 h-8 rounded-full object-cover" />
-            {activeChat.online && (
-              <span className="absolute bottom-0 right-0 w-2 h-2 bg-emerald-500 rounded-full border border-slate-900" />
-            )}
-          </div>
-          <div>
-            <p className="text-xs font-bold leading-tight">{activeChat.username}</p>
-            <p className="text-[10px] text-slate-400">{activeChat.online ? "Online" : "Offline"}</p>
-          </div>
-        </div>
-
-        <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3">
-          {activeChat.messages.map((msg) => {
-            const isMe = msg.sender === "me";
-            return (
-              <div
-                key={msg.id}
-                className={`flex flex-col max-w-[75%] ${isMe ? "self-end items-end" : "self-start items-start"}`}
-              >
-                <div
-                  className={`p-3 rounded-2xl text-xs leading-relaxed ${
-                    isMe
-                      ? "bg-gradient-to-r from-amber-500 to-orange-500 text-black font-medium rounded-tr-none"
-                      : "bg-slate-800 text-white rounded-tl-none border border-slate-700/60"
-                  }`}
-                >
-                  {msg.text}
-                </div>
-                <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-500">
-                  <span>{msg.time}</span>
-                  {isMe && <CheckCheck size={11} className="text-amber-500" />}
-                </div>
-              </div>
-            );
-          })}
-          <div ref={messagesEndRef} />
-        </div>
-
-        <form onSubmit={handleSendSubmit} className="p-3 bg-slate-950/80 border-t border-slate-800 flex items-center gap-2">
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            placeholder="Type a message..."
-            className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-          />
-          <button
-            type="submit"
-            disabled={!inputText.trim()}
-            className="p-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black rounded-xl transition-all"
-          >
-            <Send size={15} />
-          </button>
-        </form>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="relative">
-        <Search size={16} className="absolute left-3.5 top-3 text-slate-500" />
-        <input
-          type="text"
-          placeholder="Search conversations..."
-          className="w-full bg-slate-900/60 border border-slate-800 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500"
-        />
-      </div>
-
-      <div className="flex flex-col gap-2 mt-1">
-        {chats.map((chat) => (
-          <div
-            key={chat.id}
-            onClick={() => onSelectChat(chat)}
-            className="bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800/70 p-3.5 rounded-2xl flex items-center gap-3.5 cursor-pointer transition-all active:scale-[0.99]"
-          >
-            <div className="relative">
-              <img src={chat.avatar} className="w-11 h-11 rounded-full object-cover border border-slate-800" />
-              {chat.online && (
-                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-slate-950" />
-              )}
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold text-white truncate">{chat.username}</p>
-                <span className="text-[10px] text-slate-500">{chat.timestamp}</span>
-              </div>
-              <p className="text-xs text-slate-400 truncate mt-0.5">{chat.lastMessage}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // --- COMMENTS DRAWER ---
 function CommentsDrawer({ post, onClose, onAddComment }) {
   const [commentInput, setCommentInput] = useState("");
@@ -1553,7 +1608,7 @@ function ProfileView({ user, currentUser, onOpenAuth }) {
   );
 }
 
-// --- FULLSCREEN STORY VIEWER ---
+// --- STORY VIEWER MODAL ---
 function StoryViewerModal({ stories, initialIndex, onClose }) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [progress, setProgress] = useState(0);
