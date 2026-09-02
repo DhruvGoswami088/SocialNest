@@ -45,8 +45,112 @@ import {
   Sparkles,
   Play,
   Pause,
-  Users
+  Users,
+  Radio,
+  Sliders,
+  AlertCircle,
+  RefreshCw,
+  Disc
 } from "lucide-react";
+
+// --- WEB AUDIO API NATIVE AMBIENT SFX ENGINE ---
+function playHapticSFX(type) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    const now = ctx.currentTime;
+    if (type === "send") {
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(540, now);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.12);
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+      osc.start(now);
+      osc.stop(now + 0.15);
+    } else if (type === "receive") {
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.exponentialRampToValueAtTime(1100, now + 0.08);
+      osc.frequency.exponentialRampToValueAtTime(660, now + 0.18);
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+      osc.start(now);
+      osc.stop(now + 0.22);
+    } else if (type === "upload") {
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.1);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.25);
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      osc.start(now);
+      osc.stop(now + 0.32);
+    }
+  } catch (e) {
+    console.debug("AudioContext auto-blocked until interaction", e);
+  }
+}
+
+// --- OPTION 3: INFINITE SN MONOGRAM LOGO ---
+function BrandLogo({ className = "w-8 h-8", animated = false }) {
+  return (
+    <svg
+      viewBox="0 0 48 48"
+      fill="none"
+      className={`${className} ${animated ? "animate-pulse" : ""} transition-transform drop-shadow-[0_2px_8px_rgba(245,143,124,0.3)]`}
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <defs>
+        <linearGradient id="snGradMono" x1="8" y1="40" x2="40" y2="8" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#F58F7C" />
+          <stop offset="55%" stopColor="#F2C4CE" />
+          <stop offset="100%" stopColor="#D6D6D6" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M36 14C36 9.58172 32.4183 6 28 6C23.5817 6 20 9.58172 20 14V34C20 38.4183 16.4183 42 12 42C7.58172 42 4 38.4183 4 34"
+        stroke="url(#snGradMono)"
+        strokeWidth="4.5"
+        strokeLinecap="round"
+      />
+      <path
+        d="M28 20V34C28 38.4183 31.5817 42 36 42C40.4183 42 44 38.4183 44 34C44 29.5817 40.4183 26 36 26H20"
+        stroke="url(#snGradMono)"
+        strokeWidth="4.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function BrandLoader({ message = "Loading Social Nest..." }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-16">
+      <BrandLogo className="w-12 h-12" animated />
+      <span className="text-xs font-semibold text-[#D6D6D6] tracking-wider animate-pulse">
+        {message}
+      </span>
+    </div>
+  );
+}
+
+const FILTER_STYLES = {
+  normal: { label: "Normal", filter: "none" },
+  warm: { label: "Tokyo Warm", filter: "contrast(115%) sepia(28%) saturate(140%)" },
+  cyber: { label: "Neo Cyan", filter: "contrast(130%) hue-rotate(190deg) brightness(95%)" },
+  blush: { label: "Soft Blush", filter: "contrast(105%) saturate(125%) brightness(105%)" },
+  noir: { label: "Onyx B&W", filter: "grayscale(100%) contrast(140%)" },
+};
+
+const SAMPLE_VIRAL_TRACKS = [
+  { id: "t1", title: "Espresso Vibe", artist: "Sabrina C.", url: "https://actions.google.com/sounds/v1/ambiences/coffee_shop.ogg" },
+  { id: "t2", title: "Midnight City Sparks", artist: "Synthwave", url: "https://actions.google.com/sounds/v1/foley/wind_synthetic_strong.ogg" },
+  { id: "t3", title: "Sunset Waves Lo-Fi", artist: "Nest Sounds", url: "https://actions.google.com/sounds/v1/weather/light_rain.ogg" },
+];
 
 const STORY_MODES = {
   announcement: { label: "Important", color: "from-[#F58F7C] via-[#F2C4CE] to-[#D6D6D6]", icon: Bell, duration: 7000 },
@@ -60,14 +164,18 @@ const SAMPLE_STORIES = [
     username: "alex_dev",
     userAvatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
     mediaUrl: "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800",
+    audioUrl: "https://actions.google.com/sounds/v1/ambiences/coffee_shop.ogg",
+    audioTitle: "Espresso Vibe • Sabrina C.",
     category: "announcement",
-    caption: "🚀 Social Nest upgraded with glass controls and new theme!",
+    caption: "🚀 Audio stories and loop engine enabled!",
   },
   {
     id: "s2",
     username: "sarah_m",
     userAvatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150",
     mediaUrl: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800",
+    audioUrl: "https://actions.google.com/sounds/v1/weather/light_rain.ogg",
+    audioTitle: "Sunset Waves Lo-Fi • Nest Sounds",
     category: "routine",
     caption: "Morning coffee & ocean walk ☕🌊",
   },
@@ -83,7 +191,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [viewedUserProfile, setViewedUserProfile] = useState(null); // Clickable User Profile Modal
+  const [viewedUserProfile, setViewedUserProfile] = useState(null);
+  const [toastMessage, setToastMessage] = useState("");
 
   // Views & Filters
   const [activeTab, setActiveTab] = useState("home");
@@ -104,9 +213,14 @@ export default function App() {
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [loadingSparks, setLoadingSparks] = useState(true);
   const [activeChat, setActiveChat] = useState(null);
-  const [activeCommentTarget, setActiveCommentTarget] = useState(null); // { type: 'post'|'spark', item: obj }
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [activeCommentTarget, setActiveCommentTarget] = useState(null);
+  const [isStudioOpen, setIsStudioOpen] = useState(false);
   const [isUploadSparkOpen, setIsUploadSparkOpen] = useState(false);
+
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(""), 3500);
+  };
 
   const fetchUserProfile = async (userId, userMetadata, email) => {
     try {
@@ -119,6 +233,7 @@ export default function App() {
           handle: userMetadata?.handle || email?.split("@")[0] || "user",
           full_name: userMetadata?.full_name || "SocialNest Creator",
           avatar_url: userMetadata?.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300",
+          banner_url: null,
           bio: "Exploring Social Nest 🚀",
         });
       }
@@ -132,7 +247,7 @@ export default function App() {
       const u = session?.user ?? null;
       setCurrentUser(u);
       if (u) fetchUserProfile(u.id, u.user_metadata, u.email);
-      setAuthChecked(true);
+      setTimeout(() => setAuthChecked(true), 900);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -148,6 +263,7 @@ export default function App() {
 
   const currentHandle = profile?.handle || (currentUser ? currentUser.email.split("@")[0] : "guest");
   const currentAvatar = profile?.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300";
+  const currentBanner = profile?.banner_url || null;
 
   const fetchUserEngagements = async () => {
     if (!currentHandle || currentHandle === "guest") return;
@@ -179,9 +295,11 @@ export default function App() {
     const channel = supabase
       .channel("notif_msg_channel")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `recipient_handle=eq.${currentHandle}` }, (p) => {
+        playHapticSFX("receive");
         setNotifications((prev) => [p.new, ...prev]);
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `recipient_handle=eq.${currentHandle}` }, () => {
+        playHapticSFX("receive");
         setUnreadMsgCount((c) => c + 1);
       })
       .subscribe();
@@ -204,6 +322,9 @@ export default function App() {
         content: p.content,
         mediaUrl: p.media_url,
         likes: p.likes_count || 0,
+        audioTitle: p.audio_title,
+        audioUrl: p.audio_url,
+        filterStyle: p.filter_style,
         reposts: 0,
         comments: (p.comments || []).map((c) => ({ id: c.id, user: c.user_handle, text: c.content })),
       }));
@@ -249,6 +370,7 @@ export default function App() {
 
   const handleAddNewPost = async (newPost) => {
     try {
+      playHapticSFX("upload");
       const { error } = await supabase.from("posts").insert([
         {
           user_handle: currentHandle,
@@ -256,12 +378,15 @@ export default function App() {
           content: newPost.content,
           media_url: newPost.mediaUrl,
           post_type: newPost.type,
+          audio_title: newPost.audioTitle || null,
+          audio_url: newPost.audioUrl || null,
+          filter_style: newPost.filterStyle || "normal",
           likes_count: 0,
         },
       ]);
       if (error) throw error;
       fetchPosts();
-      setIsCreateOpen(false);
+      setIsStudioOpen(false);
     } catch (err) {
       alert("Failed to post: " + err.message);
     }
@@ -361,6 +486,7 @@ export default function App() {
         setSparks((prev) => prev.map((s) => (s.id === target.item.id ? { ...s, comments: [...(s.comments || []), created] } : s)));
         setActiveCommentTarget((prev) => prev ? { ...prev, item: { ...prev.item, comments: [...(prev.item.comments || []), created] } } : null);
       }
+      playHapticSFX("send");
     } catch (err) {
       console.error("Error adding comment:", err);
     }
@@ -378,7 +504,26 @@ export default function App() {
     }
   };
 
-  // Open profile of user clicked anywhere
+  const handleInitiateDirectMessage = (targetHandle, targetAvatar) => {
+    if (targetHandle === currentHandle) {
+      showToast("You cannot message yourself.");
+      return;
+    }
+
+    if (!followingHandles.includes(targetHandle)) {
+      showToast(`Follow @${targetHandle} to send a direct message!`);
+      return;
+    }
+
+    setViewedUserProfile(null);
+    setActiveChat({
+      userId: targetHandle,
+      username: targetHandle,
+      avatar: targetAvatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
+    });
+    setActiveTab("messages");
+  };
+
   const handleOpenUserProfile = async (targetHandle) => {
     try {
       const { data } = await supabase.from("profiles").select("*").eq("handle", targetHandle).single();
@@ -391,6 +536,7 @@ export default function App() {
           handle: targetHandle,
           full_name: targetHandle,
           avatar_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300",
+          banner_url: null,
           bio: "Social Nest Creator",
           posts: targetPosts,
         });
@@ -415,8 +561,11 @@ export default function App() {
 
   if (!authChecked) {
     return (
-      <div className="min-h-screen bg-[#2C2B30] flex items-center justify-center text-[#F58F7C]">
-        <Loader2 size={32} className="animate-spin" />
+      <div className="min-h-screen bg-[#2C2B30] flex flex-col items-center justify-center gap-4">
+        <BrandLogo className="w-20 h-20" animated />
+        <h1 className="text-xl font-black tracking-widest bg-gradient-to-r from-[#F58F7C] via-[#F2C4CE] to-[#D6D6D6] bg-clip-text text-transparent">
+          SOCIAL NEST
+        </h1>
       </div>
     );
   }
@@ -427,9 +576,17 @@ export default function App() {
 
   return (
     <div className={`min-h-screen ${isDarkMode ? "bg-[#2C2B30] text-[#D6D6D6]" : "bg-[#FAF7F8] text-[#2C2B30]"} flex flex-col items-center pb-20 transition-colors duration-200`}>
+      {toastMessage && (
+        <div className="fixed top-4 inset-x-0 mx-auto max-w-xs z-50 px-4 py-2.5 rounded-2xl bg-[#F58F7C] text-[#2C2B30] font-bold text-xs shadow-2xl flex items-center gap-2 border border-white/20 animate-bounce">
+          <AlertCircle size={16} />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* Top Navbar */}
       <header className={`w-full max-w-md px-4 py-3 flex items-center justify-between border-b ${isDarkMode ? "border-[#4F4F51] bg-[#2C2B30]/90" : "border-[#D6D6D6] bg-white/90"} sticky top-0 backdrop-blur-md z-30`}>
-        <div className="relative">
+        <div className="relative flex items-center gap-2">
+          <BrandLogo className="w-6 h-6" />
           <button
             onClick={() => setFeedDropdownOpen(!feedDropdownOpen)}
             className="flex items-center gap-1.5 focus:outline-none"
@@ -441,7 +598,7 @@ export default function App() {
           </button>
 
           {feedDropdownOpen && (
-            <div className={`absolute left-0 mt-2 w-36 rounded-2xl p-1.5 border shadow-2xl z-40 ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-[#D6D6D6]"}`}>
+            <div className={`absolute left-0 top-8 mt-2 w-36 rounded-2xl p-1.5 border shadow-2xl z-40 ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-[#D6D6D6]"}`}>
               <button
                 onClick={() => { setFeedFilter("all"); setFeedDropdownOpen(false); setActiveTab("home"); }}
                 className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold ${feedFilter === "all" ? "text-[#F58F7C] bg-[#F58F7C]/15 font-bold" : isDarkMode ? "text-[#D6D6D6] hover:bg-[#4F4F51]" : "text-slate-700 hover:bg-slate-100"}`}
@@ -458,14 +615,14 @@ export default function App() {
           )}
         </div>
 
-        {/* Action icons: New Post & Notifications */}
+        {/* Action icons: New Studio Post & Notifications */}
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setIsCreateOpen(true)}
+            onClick={() => setIsStudioOpen(true)}
             className="p-1.5 rounded-xl text-[#F58F7C] hover:bg-[#F58F7C]/15 transition-colors"
-            title="Create Post"
+            title="Open Studio Creator"
           >
-            <PlusSquare size={21} />
+            <Camera size={21} />
           </button>
 
           <button
@@ -494,7 +651,6 @@ export default function App() {
             likedPostIds={likedPostIds}
             bookmarkedPostIds={bookmarkedPostIds}
             loading={loadingPosts}
-            profileAvatar={currentAvatar}
             currentHandle={currentHandle}
             followingHandles={followingHandles}
             onToggleFollow={handleToggleFollow}
@@ -534,9 +690,7 @@ export default function App() {
             </div>
             <div className="w-full h-[76vh] overflow-y-scroll snap-y snap-mandatory rounded-3xl border border-[#4F4F51] bg-[#2C2B30] shadow-2xl">
               {loadingSparks ? (
-                <div className="h-full flex items-center justify-center text-xs text-slate-500">
-                  <Loader2 className="animate-spin mr-2" size={16} /> Loading Sparks...
-                </div>
+                <BrandLoader message="Fetching Sparks..." />
               ) : (
                 sparks.map((spark) => (
                   <SparkCard
@@ -573,6 +727,7 @@ export default function App() {
               name: profile?.full_name || "Creator",
               handle: currentHandle,
               avatar: currentAvatar,
+              banner: currentBanner,
               bio: profile?.bio || "Exploring Social Nest 🚀",
               stats: {
                 posts: posts.filter((p) => p.username === currentHandle).length,
@@ -633,18 +788,28 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Clickable Target User Profile Modal */}
+      {/* Target User Profile Modal */}
       {viewedUserProfile && (
         <UserProfileModal
           isDarkMode={isDarkMode}
           profile={viewedUserProfile}
           isFollowing={followingHandles.includes(viewedUserProfile.handle)}
           onToggleFollow={() => handleToggleFollow(viewedUserProfile.handle)}
+          onDirectMessage={() => handleInitiateDirectMessage(viewedUserProfile.handle, viewedUserProfile.avatar_url)}
           onClose={() => setViewedUserProfile(null)}
           onSelectPost={(post) => {
             setViewedUserProfile(null);
             setActiveCommentTarget({ type: "post", item: post });
           }}
+        />
+      )}
+
+      {/* Redesigned Instagram-Grade Studio Modal */}
+      {isStudioOpen && (
+        <StudioCreatorModal
+          isDarkMode={isDarkMode}
+          onClose={() => setIsStudioOpen(false)}
+          onSubmit={handleAddNewPost}
         />
       )}
 
@@ -658,14 +823,21 @@ export default function App() {
           onOpenEditProfile={() => { setSettingsOpen(false); setEditProfileOpen(true); }}
         />
       )}
+
+      {/* Edit Profile Modal */}
       {editProfileOpen && (
         <EditProfileModal
           isDarkMode={isDarkMode}
           currentProfile={profile}
           onClose={() => setEditProfileOpen(false)}
-          onSave={(up) => { setProfile(p => ({ ...p, ...up })); setEditProfileOpen(false); }}
+          onSave={async (up) => {
+            await supabase.from("profiles").update(up).eq("id", currentUser.id);
+            setProfile((p) => ({ ...p, ...up }));
+            setEditProfileOpen(false);
+          }}
         />
       )}
+
       {notificationsOpen && (
         <NotificationsDrawer
           isDarkMode={isDarkMode}
@@ -674,13 +846,7 @@ export default function App() {
           onOpenUserProfile={handleOpenUserProfile}
         />
       )}
-      {isCreateOpen && (
-        <CreatePostModal
-          isDarkMode={isDarkMode}
-          onClose={() => setIsCreateOpen(false)}
-          onSubmit={handleAddNewPost}
-        />
-      )}
+
       {isUploadSparkOpen && (
         <UploadSparkModal
           isDarkMode={isDarkMode}
@@ -688,6 +854,7 @@ export default function App() {
           onSubmit={() => { fetchSparks(); setIsUploadSparkOpen(false); }}
         />
       )}
+
       {activeCommentTarget && (
         <CommentsDrawer
           isDarkMode={isDarkMode}
@@ -697,6 +864,7 @@ export default function App() {
           onOpenUserProfile={handleOpenUserProfile}
         />
       )}
+
       {selectedStoryIndex !== null && (
         <StoryViewerModal
           stories={SAMPLE_STORIES}
@@ -749,9 +917,7 @@ function VisitorWelcomeView({ isDarkMode }) {
   return (
     <div className={`min-h-screen w-full flex flex-col items-center justify-center p-6 ${isDarkMode ? "bg-[#2C2B30] text-[#D6D6D6]" : "bg-[#FAF7F8] text-[#2C2B30]"}`}>
       <div className="w-full max-w-sm flex flex-col items-center text-center mb-6">
-        <div className="p-3.5 rounded-3xl bg-gradient-to-tr from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] mb-3 shadow-lg shadow-[#F58F7C]/20">
-          <Sparkles size={28} />
-        </div>
+        <BrandLogo className="w-16 h-16 mb-2" animated />
         <h1 className="text-2xl font-black tracking-wider bg-gradient-to-r from-[#F58F7C] via-[#F2C4CE] to-[#D6D6D6] bg-clip-text text-transparent">
           SOCIAL NEST
         </h1>
@@ -832,7 +998,7 @@ function VisitorWelcomeView({ isDarkMode }) {
             disabled={loading}
             className="w-full mt-2 py-2.5 bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold text-xs rounded-xl shadow-md shadow-[#F58F7C]/20 disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            {loading && <Loader2 size={14} className="animate-spin" />}
+            {loading && <BrandLogo className="w-5 h-5" animated />}
             {isSignUp ? "Sign Up" : "Sign In"}
           </button>
         </form>
@@ -910,7 +1076,7 @@ function HomeView({
       {/* Posts Feed */}
       <div className="flex flex-col">
         {loading ? (
-          <p className="text-xs text-slate-500 text-center py-8">Loading posts...</p>
+          <BrandLoader message="Fetching posts..." />
         ) : posts.length === 0 ? (
           <div className="text-center py-12 text-slate-500 text-xs">
             {feedFilter === "following" ? "No posts from creators you follow." : "No posts found."}
@@ -940,9 +1106,10 @@ function HomeView({
   );
 }
 
-// --- GLASS VIDEO PLAYER COMPONENT ---
-function GlassVideoPlayer({ src, isDarkMode }) {
+// --- GLASS VIDEO PLAYER WITH AUDIO TAG INTEGRATION ---
+function GlassVideoPlayer({ src, audioUrl, isDarkMode }) {
   const videoRef = useRef(null);
+  const audioRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [progress, setProgress] = useState(0);
@@ -951,9 +1118,14 @@ function GlassVideoPlayer({ src, isDarkMode }) {
     if (videoRef.current) {
       if (isPlaying) {
         videoRef.current.pause();
+        if (audioRef.current) audioRef.current.pause();
         setIsPlaying(false);
       } else {
         videoRef.current.play();
+        if (audioRef.current) {
+          audioRef.current.currentTime = videoRef.current.currentTime;
+          audioRef.current.play().catch(() => {});
+        }
         setIsPlaying(true);
       }
     }
@@ -978,7 +1150,10 @@ function GlassVideoPlayer({ src, isDarkMode }) {
         className="w-full max-h-96 object-cover cursor-pointer"
       />
 
-      {/* Glassmorphic Play/Pause Ripple Overlay */}
+      {audioUrl && (
+        <audio ref={audioRef} src={audioUrl} loop muted={isMuted} />
+      )}
+
       {!isPlaying && (
         <div
           onClick={togglePlay}
@@ -990,13 +1165,11 @@ function GlassVideoPlayer({ src, isDarkMode }) {
         </div>
       )}
 
-      {/* Glass Bottom Control Bar */}
       <div className="absolute bottom-2 inset-x-2 px-3 py-1.5 rounded-xl bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
         <button onClick={togglePlay} className="text-[#F2C4CE] hover:text-[#F58F7C]">
           {isPlaying ? <Pause size={15} /> : <Play size={15} />}
         </button>
 
-        {/* Progress Bar */}
         <div className="flex-1 h-1.5 bg-[#4F4F51] rounded-full overflow-hidden">
           <div className="h-full bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE]" style={{ width: `${progress}%` }} />
         </div>
@@ -1009,13 +1182,12 @@ function GlassVideoPlayer({ src, isDarkMode }) {
   );
 }
 
-// --- SEARCH VIEW: MEDIA & USERS SEARCH ---
+// --- SEARCH VIEW ---
 function SearchView({ isDarkMode, posts, searchQuery, setSearchQuery, searchTag, setSearchTag, onSelectPost, onOpenUserProfile }) {
-  const [searchMode, setSearchMode] = useState("media"); // 'media' or 'users'
+  const [searchMode, setSearchMode] = useState("media");
   const [searchedUsers, setSearchedUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
 
-  // Filter media
   const mediaPosts = posts.filter((p) => p.mediaUrl && p.mediaUrl.trim() !== "");
   const filteredMedia = mediaPosts.filter((p) => {
     if (!searchQuery.trim() && !searchTag) return true;
@@ -1025,7 +1197,6 @@ function SearchView({ isDarkMode, posts, searchQuery, setSearchQuery, searchTag,
     return matchQuery && matchTag;
   });
 
-  // Search profiles directly from DB
   useEffect(() => {
     if (searchMode !== "users" || !searchQuery.trim()) {
       setSearchedUsers([]);
@@ -1037,7 +1208,7 @@ function SearchView({ isDarkMode, posts, searchQuery, setSearchQuery, searchTag,
       const clean = searchQuery.trim().toLowerCase().replace("@", "");
       const { data } = await supabase
         .from("profiles")
-        .select("handle, full_name, avatar_url, bio")
+        .select("handle, full_name, avatar_url, banner_url, bio")
         .or(`handle.ilike.%${clean}%,full_name.ilike.%${clean}%`)
         .limit(10);
 
@@ -1051,7 +1222,6 @@ function SearchView({ isDarkMode, posts, searchQuery, setSearchQuery, searchTag,
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Search Toggle (Media vs Creators) */}
       <div className={`flex p-1 rounded-xl border text-xs font-semibold ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-slate-100 border-[#D6D6D6]"}`}>
         <button
           onClick={() => setSearchMode("media")}
@@ -1092,7 +1262,7 @@ function SearchView({ isDarkMode, posts, searchQuery, setSearchQuery, searchTag,
       {searchMode === "users" ? (
         <div className="flex flex-col gap-2 mt-1">
           {loadingUsers ? (
-            <p className="text-xs text-slate-500 text-center py-10">Searching creators...</p>
+            <BrandLoader message="Searching creators..." />
           ) : searchedUsers.length === 0 ? (
             <p className="text-xs text-slate-500 text-center py-10">
               {searchQuery.trim() ? "No creator found." : "Type a handle or name to find people."}
@@ -1137,7 +1307,7 @@ function SearchView({ isDarkMode, posts, searchQuery, setSearchQuery, searchTag,
                     <Video size={13} className="absolute top-1.5 right-1.5 text-white drop-shadow" />
                   </div>
                 ) : (
-                  <img src={post.mediaUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                  <img src={post.mediaUrl} style={{ filter: FILTER_STYLES[post.filterStyle]?.filter || "none" }} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                 )}
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-white text-xs font-bold">
                   <span className="flex items-center gap-1"><Heart size={12} className="fill-white" /> {post.likes}</span>
@@ -1152,9 +1322,9 @@ function SearchView({ isDarkMode, posts, searchQuery, setSearchQuery, searchTag,
   );
 }
 
-function FormattedPostText({ text, onSelectTag, isDarkMode }) {
+function FormattedPostText({ text, onSelectTag, onOpenUserProfile, isDarkMode }) {
   if (!text) return null;
-  const parts = text.split(/(#[a-zA-Z0-9_]+)/g);
+  const parts = text.split(/(#[a-zA-Z0-9_]+|@[a-zA-Z0-9_]+)/g);
   return (
     <p className={`text-xs sm:text-sm leading-relaxed whitespace-pre-line mb-3 ${isDarkMode ? "text-[#D6D6D6]" : "text-slate-800"}`}>
       {parts.map((part, i) => {
@@ -1165,6 +1335,18 @@ function FormattedPostText({ text, onSelectTag, isDarkMode }) {
               key={i}
               onClick={(e) => { e.stopPropagation(); onSelectTag(rawTag); }}
               className="text-[#F58F7C] font-bold hover:underline cursor-pointer"
+            >
+              {part}{" "}
+            </span>
+          );
+        }
+        if (part.startsWith("@")) {
+          const rawUser = part.slice(1);
+          return (
+            <span
+              key={i}
+              onClick={(e) => { e.stopPropagation(); onOpenUserProfile(rawUser); }}
+              className="text-[#F2C4CE] font-bold hover:underline cursor-pointer"
             >
               {part}{" "}
             </span>
@@ -1224,15 +1406,27 @@ function FeedCard({ post, isDarkMode, isLiked, isBookmarked, currentHandle, isFo
         )}
       </div>
 
-      <FormattedPostText text={post.content} onSelectTag={onSelectTag} isDarkMode={isDarkMode} />
+      <FormattedPostText text={post.content} onSelectTag={onSelectTag} onOpenUserProfile={onOpenUserProfile} isDarkMode={isDarkMode} />
+
+      {post.audioTitle && (
+        <div className="mb-2.5 flex items-center gap-2 text-[11px] font-semibold text-[#F2C4CE] bg-[#4F4F51]/40 border border-[#4F4F51] px-3 py-1 rounded-full w-fit">
+          <Disc size={13} className="animate-spin text-[#F58F7C]" />
+          <span>{post.audioTitle}</span>
+        </div>
+      )}
 
       {post.mediaUrl && (
         <div className="mb-3">
           {isVideo ? (
-            <GlassVideoPlayer src={post.mediaUrl} isDarkMode={isDarkMode} />
+            <GlassVideoPlayer src={post.mediaUrl} audioUrl={post.audioUrl} isDarkMode={isDarkMode} />
           ) : (
             <div className={`rounded-2xl overflow-hidden border ${isDarkMode ? "border-[#4F4F51] bg-black" : "border-slate-200 bg-slate-100"} flex items-center justify-center max-h-96`}>
-              <img src={post.mediaUrl} className="w-full h-full object-cover max-h-96" alt="" />
+              <img
+                src={post.mediaUrl}
+                style={{ filter: FILTER_STYLES[post.filterStyle]?.filter || "none" }}
+                className="w-full h-full object-cover max-h-96"
+                alt=""
+              />
             </div>
           )}
         </div>
@@ -1261,112 +1455,149 @@ function FeedCard({ post, isDarkMode, isLiked, isBookmarked, currentHandle, isFo
   );
 }
 
-// --- USER PROFILE MODAL ---
-function UserProfileModal({ isDarkMode, profile, isFollowing, onToggleFollow, onClose, onSelectPost }) {
+// --- USER PROFILE MODAL (FIXED OVERLAPPING AVATAR STACKING) ---
+function UserProfileModal({ isDarkMode, profile, isFollowing, onToggleFollow, onDirectMessage, onClose, onSelectPost }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl relative border max-h-[85vh] overflow-y-auto ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-[#D6D6D6]" : "bg-white border-[#D6D6D6] text-[#2C2B30]"}`}>
-        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X size={20} /></button>
+      <div className={`w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl relative border max-h-[85vh] flex flex-col ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-[#D6D6D6]" : "bg-white border-[#D6D6D6] text-[#2C2B30]"}`}>
+        
+        {/* Banner Section */}
+        <div className="h-32 w-full relative bg-gradient-to-r from-[#F58F7C] via-[#F2C4CE] to-[#4F4F51] shrink-0 z-0">
+          {profile.banner_url && (
+            <img src={profile.banner_url} className="w-full h-full object-cover" />
+          )}
+          <button onClick={onClose} className="absolute top-3 right-3 p-1.5 rounded-full bg-black/60 text-white hover:bg-black/80 z-20">
+            <X size={16} />
+          </button>
+        </div>
 
-        <div className="flex items-center gap-4">
-          <div className="p-0.5 rounded-full bg-gradient-to-tr from-[#F58F7C] to-[#F2C4CE]">
-            <img src={profile.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300"} className="w-16 h-16 rounded-full object-cover border-2 border-black" />
+        {/* Content Section: Avatar Elevated via relative z-10 */}
+        <div className="p-5 pt-0 flex-1 overflow-y-auto">
+          <div className="flex justify-between items-end -mt-11 mb-3 relative z-10">
+            <div className="p-1 rounded-full bg-[#2C2B30] border-2 border-[#F58F7C] shadow-lg">
+              <img
+                src={profile.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300"}
+                className="w-20 h-20 rounded-full object-cover"
+              />
+            </div>
+
+            <div className="flex gap-2 mb-1">
+              <button
+                onClick={onToggleFollow}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
+                  isFollowing
+                    ? "bg-[#4F4F51] text-[#D6D6D6]"
+                    : "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30]"
+                }`}
+              >
+                {isFollowing ? <UserCheck size={13} /> : <UserPlus size={13} />}
+                {isFollowing ? "Following" : "Follow"}
+              </button>
+
+              <button
+                onClick={onDirectMessage}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#F58F7C]/20 border border-[#F58F7C]/40 text-[#F58F7C] hover:bg-[#F58F7C]/30 transition-all flex items-center gap-1"
+              >
+                <MessageSquareText size={13} /> Message
+              </button>
+            </div>
           </div>
+
           <div>
             <h3 className="font-bold text-base text-white">{profile.full_name || profile.handle}</h3>
             <p className="text-xs text-[#F58F7C]">@{profile.handle}</p>
           </div>
-        </div>
 
-        <p className="text-xs text-[#D6D6D6]/80 mt-3 leading-relaxed">{profile.bio || "Creator on Social Nest"}</p>
+          <p className="text-xs text-[#D6D6D6]/80 mt-2 leading-relaxed">{profile.bio || "Creator on Social Nest"}</p>
 
-        <div className="mt-4 flex gap-2">
-          <button
-            onClick={onToggleFollow}
-            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-              isFollowing
-                ? "bg-[#4F4F51] text-[#D6D6D6]"
-                : "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30]"
-            }`}
-          >
-            {isFollowing ? <UserCheck size={14} /> : <UserPlus size={14} />}
-            {isFollowing ? "Following" : "Follow"}
-          </button>
-        </div>
-
-        <div className="border-t border-[#4F4F51] mt-5 pt-3">
-          <span className="text-xs font-bold uppercase tracking-wider block mb-3 text-slate-400">Posts</span>
-          {(!profile.posts || profile.posts.length === 0) ? (
-            <p className="text-xs text-slate-500 py-6 text-center">No posts shared yet.</p>
-          ) : (
-            <div className="grid grid-cols-3 gap-1 rounded-xl overflow-hidden">
-              {profile.posts.map((p) => (
-                <div
-                  key={p.id}
-                  onClick={() => onSelectPost(p)}
-                  className="aspect-square relative group cursor-pointer bg-black/40 overflow-hidden"
-                >
-                  {p.mediaUrl ? (
-                    <img src={p.mediaUrl} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-[10px] p-1 text-center font-bold text-[#F58F7C]">
-                      Aa
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="border-t border-[#4F4F51] mt-5 pt-3">
+            <span className="text-xs font-bold uppercase tracking-wider block mb-3 text-slate-400">Posts</span>
+            {(!profile.posts || profile.posts.length === 0) ? (
+              <p className="text-xs text-slate-500 py-6 text-center">No posts shared yet.</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-1 rounded-xl overflow-hidden">
+                {profile.posts.map((p) => (
+                  <div
+                    key={p.id}
+                    onClick={() => onSelectPost(p)}
+                    className="aspect-square relative group cursor-pointer bg-black/40 overflow-hidden"
+                  >
+                    {p.mediaUrl ? (
+                      <img src={p.mediaUrl} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-[10px] p-1 text-center font-bold text-[#F58F7C]">
+                        Aa
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-// --- PROFILE VIEW ---
+// --- PROFILE VIEW WITH ELEVATED AVATAR ---
 function ProfileView({ isDarkMode, user, posts, bookmarkedPostIds, onOpenSettings, onOpenEditProfile }) {
   const [profileTab, setProfileTab] = useState("posts");
   const savedPosts = posts.filter((p) => bookmarkedPostIds.has(p.id));
 
   return (
     <div className="flex flex-col gap-4">
-      <div className={`border rounded-2xl p-5 shadow-sm relative ${isDarkMode ? "border-[#4F4F51] bg-[#2C2B30]/40" : "border-slate-200 bg-white"}`}>
-        <button
-          onClick={onOpenSettings}
-          className={`absolute top-4 right-4 p-2 rounded-xl transition-colors border ${
-            isDarkMode ? "border-[#4F4F51] hover:bg-[#4F4F51] text-[#D6D6D6] hover:text-white" : "border-slate-200 hover:bg-slate-100 text-slate-600 hover:text-black"
-          }`}
-          title="Account & App Settings"
-        >
-          <Settings size={18} />
-        </button>
+      <div className={`border rounded-3xl overflow-hidden shadow-sm relative ${isDarkMode ? "border-[#4F4F51] bg-[#2C2B30]/40" : "border-slate-200 bg-white"}`}>
+        
+        {/* Banner Section */}
+        <div className="h-32 w-full relative bg-gradient-to-r from-[#F58F7C] via-[#F2C4CE] to-[#4F4F51] z-0">
+          {user.banner ? (
+            <img src={user.banner} className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-white/40 text-xs font-semibold">
+              Default Social Nest Banner
+            </div>
+          )}
 
-        <div className="flex items-center justify-between pr-10">
-          <div className="p-0.5 rounded-full bg-gradient-to-tr from-[#F58F7C] to-[#F2C4CE]">
-            <img src={user.avatar} className="w-20 h-20 rounded-full object-cover border-2 border-black" />
-          </div>
-          <div className="flex gap-6 text-center">
-            <div><p className="font-bold text-base">{user.stats.posts}</p><p className="text-[11px] text-slate-400">Posts</p></div>
-            <div><p className="font-bold text-base">{user.stats.following}</p><p className="text-[11px] text-slate-400">Following</p></div>
-            <div><p className="font-bold text-base">{bookmarkedPostIds.size}</p><p className="text-[11px] text-slate-400">Saved</p></div>
-          </div>
-        </div>
-
-        <div className="mt-4">
-          <h2 className={`font-bold text-sm ${isDarkMode ? "text-white" : "text-slate-900"}`}>{user.name}</h2>
-          <p className="text-xs text-[#F58F7C] font-semibold">@{user.handle}</p>
-          <p className={`text-xs mt-1.5 leading-relaxed ${isDarkMode ? "text-[#D6D6D6]/80" : "text-slate-600"}`}>{user.bio}</p>
-        </div>
-
-        <div className="flex gap-2.5 mt-4">
           <button
-            onClick={onOpenEditProfile}
-            className={`flex-1 font-semibold text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 transition-colors border ${
-              isDarkMode ? "bg-[#4F4F51] border-[#4F4F51] text-white hover:bg-[#4F4F51]/80" : "bg-slate-100 border-slate-200 text-slate-800 hover:bg-slate-200"
-            }`}
+            onClick={onOpenSettings}
+            className="absolute top-3 right-3 p-2 rounded-xl bg-black/40 backdrop-blur-md border border-white/20 text-white hover:bg-black/60 transition-colors z-20"
+            title="Account & App Settings"
           >
-            <Edit3 size={13} /> Edit Profile
+            <Settings size={16} />
           </button>
+        </div>
+
+        {/* Content Section: Avatar Elevated Above Banner */}
+        <div className="p-5 pt-0">
+          <div className="flex items-end justify-between -mt-11 mb-3 relative z-10">
+            <div className="p-1 rounded-full bg-[#2C2B30] border-2 border-[#F58F7C] shadow-xl">
+              <img src={user.avatar} className="w-20 h-20 rounded-full object-cover" />
+            </div>
+
+            <div className="flex gap-5 text-center pr-2">
+              <div><p className="font-bold text-base">{user.stats.posts}</p><p className="text-[11px] text-slate-400">Posts</p></div>
+              <div><p className="font-bold text-base">{user.stats.following}</p><p className="text-[11px] text-slate-400">Following</p></div>
+              <div><p className="font-bold text-base">{bookmarkedPostIds.size}</p><p className="text-[11px] text-slate-400">Saved</p></div>
+            </div>
+          </div>
+
+          <div>
+            <h2 className={`font-bold text-sm ${isDarkMode ? "text-white" : "text-slate-900"}`}>{user.name}</h2>
+            <p className="text-xs text-[#F58F7C] font-semibold">@{user.handle}</p>
+            <p className={`text-xs mt-1.5 leading-relaxed ${isDarkMode ? "text-[#D6D6D6]/80" : "text-slate-600"}`}>{user.bio}</p>
+          </div>
+
+          <div className="flex gap-2.5 mt-4">
+            <button
+              onClick={onOpenEditProfile}
+              className={`flex-1 font-semibold text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 transition-colors border ${
+                isDarkMode ? "bg-[#4F4F51] border-[#4F4F51] text-white hover:bg-[#4F4F51]/80" : "bg-slate-100 border-slate-200 text-slate-800 hover:bg-slate-200"
+              }`}
+            >
+              <Edit3 size={13} /> Edit Profile & Banner
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1426,6 +1657,794 @@ function ProfileView({ isDarkMode, user, posts, bookmarkedPostIds, onOpenSetting
       {profileTab === "sparks" && (
         <div className="py-12 text-center text-slate-500 text-xs">Clips are accessible through the Sparks tab.</div>
       )}
+    </div>
+  );
+}
+
+// --- REDESIGNED INSTAGRAM-GRADE STUDIO MODAL ---
+function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
+  const [activeFilter, setActiveFilter] = useState("normal");
+  const [selectedTrack, setSelectedTrack] = useState(null);
+  const [caption, setCaption] = useState("");
+  const [capturedMedia, setCapturedMedia] = useState(null);
+  const [facingMode, setFacingMode] = useState("user");
+  const [audioPickerOpen, setAudioPickerOpen] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const videoStreamRef = useRef(null);
+  const mediaStreamRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  const startCamera = async () => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facingMode, width: { ideal: 1080 }, height: { ideal: 1920 } },
+        audio: false,
+      });
+      mediaStreamRef.current = stream;
+      if (videoStreamRef.current) {
+        videoStreamRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.warn("Camera fallback triggered:", err.message);
+    }
+  };
+
+  useEffect(() => {
+    if (!capturedMedia) startCamera();
+    return () => {
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      }
+    };
+  }, [facingMode, capturedMedia]);
+
+  const toggleFacingMode = () => {
+    setFacingMode((prev) => (prev === "user" ? "environment" : "user"));
+  };
+
+  const handleCapture = () => {
+    if (!videoStreamRef.current) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = videoStreamRef.current.videoWidth || 720;
+    canvas.height = videoStreamRef.current.videoHeight || 1280;
+    const ctx = canvas.getContext("2d");
+    ctx.filter = FILTER_STYLES[activeFilter]?.filter || "none";
+    ctx.drawImage(videoStreamRef.current, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+    setCapturedMedia({ type: "photo", url: dataUrl });
+    if (mediaStreamRef.current) mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+  };
+
+  const handlePublish = async () => {
+    if (!caption.trim() && !capturedMedia) return;
+    setIsUploading(true);
+
+    try {
+      let finalMediaUrl = null;
+
+      if (capturedMedia?.file) {
+        const fileExt = capturedMedia.file.name.split(".").pop();
+        const fileName = `${Date.now()}.${fileExt}`;
+        const { error } = await supabase.storage.from("post-media").upload(fileName, capturedMedia.file);
+        if (error) throw error;
+        const { data } = supabase.storage.from("post-media").getPublicUrl(fileName);
+        finalMediaUrl = data.publicUrl;
+      } else if (capturedMedia?.url) {
+        finalMediaUrl = capturedMedia.url;
+      }
+
+      await onSubmit({
+        type: capturedMedia ? "media" : "text",
+        content: caption.trim(),
+        mediaUrl: finalMediaUrl,
+        audioTitle: selectedTrack ? `${selectedTrack.title} • ${selectedTrack.artist}` : null,
+        audioUrl: selectedTrack ? selectedTrack.url : null,
+        filterStyle: activeFilter,
+      });
+    } catch (err) {
+      alert("Publish failed: " + err.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black flex flex-col justify-between">
+      {/* Top Floating Controls */}
+      <div className="absolute top-0 inset-x-0 p-4 flex items-center justify-between z-30 bg-gradient-to-b from-black/80 via-black/20 to-transparent">
+        <button onClick={onClose} className="p-2 rounded-full bg-black/40 backdrop-blur-md text-white border border-white/10">
+          <X size={20} />
+        </button>
+
+        <button
+          onClick={() => setAudioPickerOpen(!audioPickerOpen)}
+          className="px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/20 text-white flex items-center gap-1.5 text-xs font-semibold"
+        >
+          <Music size={14} className={selectedTrack ? "text-[#F58F7C] animate-spin" : ""} />
+          <span>{selectedTrack ? selectedTrack.title : "Add Audio"}</span>
+        </button>
+
+        {capturedMedia && (
+          <button
+            onClick={handlePublish}
+            disabled={isUploading}
+            className="px-4 py-1.5 rounded-full bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold text-xs shadow-lg"
+          >
+            {isUploading ? "Sharing..." : "Next"}
+          </button>
+        )}
+      </div>
+
+      {/* Floating Side Tools (Flip, Flash, Retake) */}
+      {!capturedMedia && (
+        <div className="absolute right-4 top-20 z-30 flex flex-col gap-4">
+          <button
+            onClick={toggleFacingMode}
+            className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white border border-white/10 shadow-md hover:bg-black/60"
+            title="Flip camera"
+          >
+            <RefreshCw size={18} />
+          </button>
+        </div>
+      )}
+
+      {/* Full-bleed Camera / Media Viewfinder */}
+      <div className="w-full h-full relative bg-black flex items-center justify-center overflow-hidden">
+        {!capturedMedia ? (
+          <video
+            ref={videoStreamRef}
+            autoPlay
+            playsInline
+            muted
+            style={{ filter: FILTER_STYLES[activeFilter]?.filter || "none" }}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <img
+            src={capturedMedia.url}
+            style={{ filter: FILTER_STYLES[activeFilter]?.filter || "none" }}
+            className="w-full h-full object-cover"
+          />
+        )}
+
+        {/* Audio Drawer Popup */}
+        {audioPickerOpen && (
+          <div className="absolute top-16 inset-x-4 p-4 rounded-2xl bg-[#2C2B30]/95 backdrop-blur-xl border border-[#4F4F51] z-40 flex flex-col gap-2 shadow-2xl">
+            <div className="flex justify-between items-center pb-2 border-b border-[#4F4F51]">
+              <span className="text-xs font-bold text-[#D6D6D6] flex items-center gap-1.5">
+                <Disc size={14} className="text-[#F58F7C]" /> Select Trending Track
+              </span>
+              <button onClick={() => setAudioPickerOpen(false)}><X size={14} className="text-slate-400" /></button>
+            </div>
+            {SAMPLE_VIRAL_TRACKS.map((t) => (
+              <div
+                key={t.id}
+                onClick={() => { setSelectedTrack(t); setAudioPickerOpen(false); }}
+                className={`p-2 rounded-xl flex items-center justify-between cursor-pointer ${selectedTrack?.id === t.id ? "bg-[#F58F7C]/20 border border-[#F58F7C]/50" : "hover:bg-[#4F4F51]/30"}`}
+              >
+                <div>
+                  <p className="text-xs font-bold text-white">{t.title}</p>
+                  <p className="text-[10px] text-slate-400">{t.artist}</p>
+                </div>
+                <Play size={12} className="text-[#F58F7C]" />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Shutter & Filter Carousel */}
+      <div className="absolute bottom-0 inset-x-0 p-4 pb-8 z-30 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col gap-3">
+        {/* Caption Bar */}
+        {capturedMedia && (
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={caption}
+              onChange={(e) => setCaption(e.target.value)}
+              placeholder="Write a caption with #hashtags or @mentions..."
+              className="w-full rounded-2xl px-4 py-2.5 text-xs bg-black/60 backdrop-blur-md border border-[#4F4F51] text-white focus:outline-none focus:border-[#F58F7C]"
+            />
+          </div>
+        )}
+
+        {/* Filter Carousel */}
+        <div className="flex items-center justify-center gap-2 overflow-x-auto no-scrollbar py-1">
+          {Object.entries(FILTER_STYLES).map(([key, item]) => (
+            <button
+              key={key}
+              onClick={() => setActiveFilter(key)}
+              className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 transition-all ${
+                activeFilter === key
+                  ? "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] shadow-md shadow-[#F58F7C]/30 scale-105"
+                  : "bg-black/50 text-[#D6D6D6] backdrop-blur-md border border-white/10"
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Shutter Button and Gallery Pick */}
+        {!capturedMedia && (
+          <div className="flex items-center justify-around pt-2">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="p-3 rounded-full bg-black/50 backdrop-blur-md text-white border border-white/20 hover:scale-105 transition-transform"
+            >
+              <ImageIcon size={20} />
+            </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*,video/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files[0];
+                if (file) setCapturedMedia({ type: "upload", url: URL.createObjectURL(file), file });
+              }}
+            />
+
+            <button
+              onClick={handleCapture}
+              className="w-20 h-20 rounded-full border-4 border-white p-1 flex items-center justify-center hover:scale-105 transition-transform active:scale-95"
+            >
+              <div className="w-full h-full rounded-full bg-gradient-to-tr from-[#F58F7C] to-[#F2C4CE]" />
+            </button>
+
+            <button
+              onClick={() => setCapturedMedia(null)}
+              className="p-3 rounded-full bg-black/50 backdrop-blur-md text-white border border-white/20 opacity-0 pointer-events-none"
+            >
+              <Sliders size={20} />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// --- AUTOPLAYING & CONTINUOUS LOOPING SPARK CARD ---
+function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUserProfile }) {
+  const videoRef = useRef(null);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
+  const [liked, setLiked] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        videoRef.current?.play().catch(() => {});
+        setIsPlaying(true);
+      } else {
+        videoRef.current?.pause();
+        setIsPlaying(false);
+      }
+    }, { threshold: 0.65 });
+
+    if (videoRef.current) observer.observe(videoRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  const togglePlay = () => {
+    if (videoRef.current) {
+      if (isPlaying) { videoRef.current.pause(); setIsPlaying(false); }
+      else { videoRef.current.play(); setIsPlaying(true); }
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (videoRef.current && videoRef.current.duration) {
+      setProgress((videoRef.current.currentTime / videoRef.current.duration) * 100);
+    }
+  };
+
+  return (
+    <div className={`relative w-full ${heightClass} snap-start bg-black flex items-center justify-center overflow-hidden group`}>
+      <video
+        ref={videoRef}
+        src={spark.video_url}
+        loop
+        autoPlay
+        playsInline
+        muted={isMuted}
+        onTimeUpdate={handleTimeUpdate}
+        onClick={togglePlay}
+        className="w-full h-full object-cover cursor-pointer"
+      />
+
+      {!isPlaying && (
+        <div onClick={togglePlay} className="absolute inset-0 bg-black/20 backdrop-blur-[1.5px] flex items-center justify-center cursor-pointer">
+          <div className="p-4 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-[#F2C4CE]/40 text-[#F58F7C]">
+            <Play size={26} className="fill-[#F58F7C] translate-x-0.5" />
+          </div>
+        </div>
+      )}
+
+      <button
+        onClick={(e) => { e.stopPropagation(); setIsMuted(!isMuted); }}
+        className="absolute top-4 right-4 p-2 bg-[#2C2B30]/60 backdrop-blur-md rounded-full text-[#D6D6D6] hover:text-white z-10 border border-white/10"
+      >
+        {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+      </button>
+
+      <div className="absolute right-3 bottom-14 z-10 flex flex-col items-center gap-5">
+        <button onClick={() => setLiked(!liked)} className="flex flex-col items-center gap-1 group/btn">
+          <div className={`p-2.5 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 transition-transform group-hover/btn:scale-110 ${liked ? "text-[#F58F7C]" : "text-white"}`}>
+            <Heart size={22} className={liked ? "fill-[#F58F7C]" : ""} />
+          </div>
+          <span className="text-[11px] font-semibold text-white drop-shadow">{spark.likes_count || 0}</span>
+        </button>
+
+        <button onClick={() => onOpenComments(spark)} className="flex flex-col items-center gap-1 group/btn">
+          <div className="p-2.5 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 text-white transition-transform group-hover/btn:scale-110">
+            <MessageCircle size={22} />
+          </div>
+          <span className="text-[11px] font-semibold text-white drop-shadow">{spark.comments?.length || 0}</span>
+        </button>
+
+        <button className="p-2.5 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 text-white transition-transform hover:scale-110">
+          <Share2 size={22} />
+        </button>
+      </div>
+
+      <div className="absolute bottom-4 left-4 right-16 z-10 text-white flex flex-col gap-2 pointer-events-none">
+        <div className="flex items-center gap-2.5 pointer-events-auto cursor-pointer" onClick={() => onOpenUserProfile(spark.user_handle)}>
+          <img src={spark.user_avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"} className="w-8 h-8 rounded-full border border-[#F2C4CE]/50 object-cover" />
+          <span className="font-semibold text-sm hover:underline">@{spark.user_handle}</span>
+        </div>
+        {spark.caption && <p className="text-xs text-[#D6D6D6] line-clamp-2 leading-relaxed">{spark.caption}</p>}
+
+        <div className="w-full h-1 bg-[#4F4F51]/70 backdrop-blur-md rounded-full overflow-hidden mt-1">
+          <div className="h-full bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE]" style={{ width: `${progress}%` }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- STORY VIEWER WITH ACTIVE AUDIO PLAYBACK ---
+function StoryViewerModal({ stories, initialIndex, onClose }) {
+  const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  const [progress, setProgress] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const audioRef = useRef(null);
+  const activeStory = stories[currentIndex];
+
+  useEffect(() => {
+    if (activeStory?.audioUrl) {
+      if (!audioRef.current) audioRef.current = new Audio(activeStory.audioUrl);
+      else audioRef.current.src = activeStory.audioUrl;
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().catch(() => {});
+    }
+
+    return () => {
+      if (audioRef.current) audioRef.current.pause();
+    };
+  }, [currentIndex]);
+
+  useEffect(() => {
+    if (isPaused) {
+      if (audioRef.current) audioRef.current.pause();
+      return;
+    } else {
+      if (audioRef.current) audioRef.current.play().catch(() => {});
+    }
+
+    const step = 50;
+    const interval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 100) {
+          if (currentIndex < stories.length - 1) {
+            setCurrentIndex((i) => i + 1);
+            return 0;
+          } else {
+            onClose();
+            return 100;
+          }
+        }
+        return prev + (step / 5000) * 100;
+      });
+    }, step);
+    return () => clearInterval(interval);
+  }, [currentIndex, isPaused]);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center">
+      <div
+        className="relative w-full max-w-md h-full sm:h-[85vh] bg-black sm:rounded-3xl overflow-hidden flex flex-col shadow-2xl"
+        onMouseDown={() => setIsPaused(true)}
+        onMouseUp={() => setIsPaused(false)}
+        onTouchStart={() => setIsPaused(true)}
+        onTouchEnd={() => setIsPaused(false)}
+      >
+        <div className="absolute top-3 inset-x-0 z-20 flex gap-1.5 px-3">
+          {stories.map((_, i) => (
+            <div key={i} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] rounded-full transition-all duration-75 ease-linear" style={{ width: i === currentIndex ? `${progress}%` : i < currentIndex ? "100%" : "0%" }} />
+            </div>
+          ))}
+        </div>
+
+        <div className="absolute top-6 inset-x-0 z-20 flex items-center justify-between px-4">
+          <div className="flex items-center gap-2">
+            <img src={activeStory.userAvatar} className="w-8 h-8 rounded-full object-cover border border-[#F2C4CE]/50" />
+            <div>
+              <span className="font-semibold text-sm text-white block">{activeStory.username}</span>
+              {activeStory.audioTitle && (
+                <span className="text-[10px] text-[#F2C4CE] flex items-center gap-1">
+                  <Music size={10} className="animate-spin" /> {activeStory.audioTitle}
+                </span>
+              )}
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1 text-white/80 hover:text-white rounded-full bg-black/30">
+            <X size={20} />
+          </button>
+        </div>
+
+        <img key={activeStory.id} src={activeStory.mediaUrl} className="w-full h-full object-cover select-none" />
+
+        {activeStory.caption && (
+          <div className="absolute bottom-6 inset-x-4 bg-black/60 backdrop-blur-md p-3 rounded-2xl text-xs sm:text-sm text-white border border-white/10">
+            {activeStory.caption}
+          </div>
+        )}
+
+        <div className="absolute left-0 top-16 bottom-0 w-1/3 z-10 cursor-pointer" onClick={() => { if (currentIndex > 0) { setCurrentIndex((i) => i - 1); setProgress(0); } }} />
+        <div className="absolute right-0 top-16 bottom-0 w-2/3 z-10 cursor-pointer" onClick={() => { if (currentIndex < stories.length - 1) { setCurrentIndex((i) => i + 1); setProgress(0); } else { onClose(); } }} />
+      </div>
+    </div>
+  );
+}
+
+// --- UNIVERSAL COMMENTS DRAWER ---
+function CommentsDrawer({ isDarkMode, target, onClose, onAddComment, onOpenUserProfile }) {
+  const [commentInput, setCommentInput] = useState("");
+  const comments = target?.item?.comments || [];
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!commentInput.trim()) return;
+    onAddComment(commentInput.trim());
+    setCommentInput("");
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col justify-end p-0 sm:p-4">
+      <div className={`w-full max-w-md mx-auto h-[65vh] rounded-t-3xl sm:rounded-3xl flex flex-col overflow-hidden shadow-2xl border ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-slate-200"}`}>
+        <div className={`px-4 py-3 border-b flex items-center justify-between ${isDarkMode ? "border-[#4F4F51]" : "border-slate-200"}`}>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-[#D6D6D6]">
+            Comments ({target.type === "spark" ? "Sparks" : "Post"})
+          </h3>
+          <button onClick={onClose} className="p-1 text-slate-400 hover:text-white"><X size={18} /></button>
+        </div>
+
+        <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3">
+          {comments.length === 0 ? (
+            <p className="text-xs text-slate-500 text-center py-12">No comments yet. Start the conversation!</p>
+          ) : (
+            comments.map((c) => (
+              <div key={c.id} className="flex gap-2.5 items-start">
+                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#F58F7C] to-[#F2C4CE] flex items-center justify-center text-[10px] font-bold text-[#2C2B30] flex-shrink-0">
+                  {c.user.charAt(0).toUpperCase()}
+                </div>
+                <div className={`flex-1 p-2.5 rounded-xl border ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51]" : "bg-slate-100 border-slate-200"}`}>
+                  <p
+                    onClick={() => onOpenUserProfile(c.user)}
+                    className="text-[11px] font-bold text-[#F58F7C] cursor-pointer hover:underline inline-block"
+                  >
+                    @{c.user}
+                  </p>
+                  <p className={`text-xs mt-0.5 ${isDarkMode ? "text-[#D6D6D6]" : "text-slate-800"}`}>{c.text}</p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <form onSubmit={handleSubmit} className={`p-3 border-t flex gap-2 ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-slate-200"}`}>
+          <input
+            type="text"
+            value={commentInput}
+            onChange={(e) => setCommentInput(e.target.value)}
+            placeholder="Add a comment..."
+            className={`flex-1 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51] text-white" : "bg-slate-100 border-slate-200 text-slate-900"}`}
+          />
+          <button type="submit" disabled={!commentInput.trim()} className="p-2 bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold rounded-xl disabled:opacity-40">
+            <Send size={14} />
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// --- EDIT PROFILE MODAL ---
+function EditProfileModal({ isDarkMode, currentProfile, onClose, onSave }) {
+  const [fullName, setFullName] = useState(currentProfile?.full_name || "");
+  const [bio, setBio] = useState(currentProfile?.bio || "");
+  const [avatarUrl, setAvatarUrl] = useState(currentProfile?.avatar_url || "");
+  const [bannerUrl, setBannerUrl] = useState(currentProfile?.banner_url || "");
+  const [uploading, setUploading] = useState(false);
+
+  const avatarInputRef = useRef(null);
+  const bannerInputRef = useRef(null);
+
+  const handleUploadFile = async (file, bucket) => {
+    const fileExt = file.name.split(".").pop();
+    const filePath = `${Date.now()}.${fileExt}`;
+    const { error } = await supabase.storage.from(bucket).upload(filePath, file);
+    if (error) throw error;
+    const { data } = supabase.storage.from(bucket).getPublicUrl(filePath);
+    return data.publicUrl;
+  };
+
+  const handleAvatarChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const url = await handleUploadFile(file, "avatars");
+      setAvatarUrl(url);
+    } catch (err) {
+      alert("Avatar upload failed: " + err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleBannerChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const url = await handleUploadFile(file, "profile-banners");
+      setBannerUrl(url);
+    } catch (err) {
+      alert("Banner upload failed: " + err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className={`w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl relative border ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-white" : "bg-white border-slate-200 text-slate-900"}`}>
+        
+        {/* Banner Picker Box */}
+        <div
+          onClick={() => bannerInputRef.current?.click()}
+          className="h-28 w-full relative bg-[#4F4F51] cursor-pointer group flex items-center justify-center border-b border-[#4F4F51]"
+        >
+          {bannerUrl ? (
+            <img src={bannerUrl} className="w-full h-full object-cover" />
+          ) : (
+            <span className="text-xs text-slate-300 flex items-center gap-1.5"><Camera size={14} /> Tap to set banner</span>
+          )}
+          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs font-semibold text-white">
+            Change Banner
+          </div>
+          <input type="file" ref={bannerInputRef} onChange={handleBannerChange} accept="image/*" className="hidden" />
+        </div>
+
+        <button onClick={onClose} className="absolute top-3 right-3 p-1.5 rounded-full bg-black/60 text-white"><X size={16} /></button>
+
+        <div className="p-6 pt-0">
+          <div className="flex items-end justify-between -mt-10 mb-4 relative z-10">
+            <div
+              onClick={() => avatarInputRef.current?.click()}
+              className="relative group cursor-pointer p-1 rounded-full bg-[#2C2B30] border-2 border-[#F58F7C]"
+            >
+              <img src={avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300"} className="w-18 h-18 rounded-full object-cover" />
+              <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <Camera size={18} className="text-white" />
+              </div>
+              <input type="file" ref={avatarInputRef} onChange={handleAvatarChange} accept="image/*" className="hidden" />
+            </div>
+            <span className="text-[11px] text-slate-400">{uploading ? "Uploading..." : "Tap photo to change avatar"}</span>
+          </div>
+
+          <form onSubmit={(e) => { e.preventDefault(); onSave({ full_name: fullName.trim(), bio: bio.trim(), avatar_url: avatarUrl, banner_url: bannerUrl }); }} className="flex flex-col gap-3">
+            <div>
+              <label className="text-[11px] font-semibold text-slate-400 block mb-1">Full Name</label>
+              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#F58F7C] border bg-black/40 border-[#4F4F51] text-white" />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-slate-400 block mb-1">Bio</label>
+              <textarea rows={3} value={bio} onChange={(e) => setBio(e.target.value)} className="w-full rounded-xl p-3 text-xs focus:outline-none focus:border-[#F58F7C] resize-none border bg-black/40 border-[#4F4F51] text-white" />
+            </div>
+            <button type="submit" disabled={uploading} className="w-full py-2.5 bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold text-xs rounded-xl shadow-sm mt-1">
+              Save Profile & Banner
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- MESSAGES VIEW ---
+function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, onSelectChat, onBack }) {
+  const [messages, setMessages] = useState([]);
+  const [inputText, setInputText] = useState("");
+  const [loadingChat, setLoadingChat] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [recentConversations, setRecentConversations] = useState([]);
+  const messagesEndRef = useRef(null);
+
+  const getConversationId = (userA, userB) => [userA, userB].sort().join("_");
+
+  const fetchRecentConversations = async () => {
+    if (!currentUser || !currentHandle) return;
+    const { data } = await supabase
+      .from("messages")
+      .select("*")
+      .or(`sender_handle.eq.${currentHandle},recipient_handle.eq.${currentHandle}`)
+      .order("created_at", { ascending: false });
+
+    if (data) {
+      const convMap = new Map();
+      for (const m of data) {
+        const partner = m.sender_handle === currentHandle ? m.recipient_handle : m.sender_handle;
+        if (!convMap.has(partner)) {
+          convMap.set(partner, {
+            userId: partner,
+            username: partner,
+            avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
+            lastMessage: m.content,
+            time: new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            unread: m.recipient_handle === currentHandle && !m.is_read
+          });
+        }
+      }
+      setRecentConversations(Array.from(convMap.values()));
+    }
+  };
+
+  useEffect(() => {
+    fetchRecentConversations();
+  }, [currentUser, currentHandle, activeChat]);
+
+  useEffect(() => {
+    if (!activeChat || !currentUser) return;
+    const convId = getConversationId(currentHandle, activeChat.userId);
+    setLoadingChat(true);
+
+    const loadMessages = async () => {
+      const { data } = await supabase.from("messages").select("*").eq("conversation_id", convId).order("created_at", { ascending: true });
+      if (data) setMessages(data);
+      setLoadingChat(false);
+      await supabase.from("messages").update({ is_read: true }).eq("conversation_id", convId).eq("recipient_handle", currentHandle);
+    };
+
+    loadMessages();
+
+    const channel = supabase
+      .channel(`chat_${convId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${convId}` }, (payload) => {
+        setMessages((prev) => (prev.some((m) => m.id === payload.new.id) ? prev : [...prev, payload.new]));
+        if (payload.new.sender_handle !== currentHandle) {
+          playHapticSFX("receive");
+        }
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, [activeChat, currentUser, currentHandle]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const handleSendSubmit = async (e) => {
+    e.preventDefault();
+    if (!inputText.trim() || !currentUser || !activeChat) return;
+    const text = inputText.trim();
+    setInputText("");
+    const convId = getConversationId(currentHandle, activeChat.userId);
+
+    playHapticSFX("send");
+    await supabase.from("messages").insert([
+      { conversation_id: convId, sender_handle: currentHandle, recipient_handle: activeChat.userId, content: text, is_read: false }
+    ]);
+  };
+
+  if (activeChat) {
+    return (
+      <div className={`flex flex-col h-[78vh] rounded-3xl overflow-hidden border shadow-2xl ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-slate-200"}`}>
+        <div className={`px-4 py-3 border-b flex items-center gap-3 ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51]" : "bg-slate-100 border-slate-200"}`}>
+          <button onClick={onBack} className="p-1 text-slate-400 hover:text-white"><ArrowLeft size={18} /></button>
+          <img src={activeChat.avatar} className="w-8 h-8 rounded-full object-cover" />
+          <div className="flex-1 min-w-0">
+            <p className={`text-xs font-bold leading-tight truncate ${isDarkMode ? "text-white" : "text-slate-900"}`}>{activeChat.username}</p>
+            <p className="text-[10px] text-[#F58F7C] font-medium">@{activeChat.userId}</p>
+          </div>
+        </div>
+
+        <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3">
+          {loadingChat ? (
+            <BrandLoader message="Loading conversation..." />
+          ) : (
+            messages.map((msg) => {
+              const isMe = msg.sender_handle === currentHandle;
+              return (
+                <div key={msg.id} className={`flex flex-col max-w-[75%] ${isMe ? "self-end items-end" : "self-start items-start"}`}>
+                  <div className={`p-3 rounded-2xl text-xs leading-relaxed ${isMe ? "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold rounded-tr-none" : isDarkMode ? "bg-[#4F4F51] text-[#D6D6D6] rounded-tl-none" : "bg-slate-200 text-slate-900 rounded-tl-none"}`}>
+                    {msg.content}
+                  </div>
+                  <span className="text-[9px] text-slate-500 mt-1">{new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                </div>
+              );
+            })
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        <form onSubmit={handleSendSubmit} className={`p-3 border-t flex items-center gap-2 ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-slate-200"}`}>
+          <input
+            type="text"
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            placeholder={`Message @${activeChat.userId}...`}
+            className={`flex-1 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51] text-white" : "bg-slate-100 border-slate-200 text-slate-900"}`}
+          />
+          <button type="submit" disabled={!inputText.trim()} className="p-2 bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] hover:opacity-90 disabled:opacity-40 text-[#2C2B30] font-bold rounded-xl transition-all"><Send size={15} /></button>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="relative">
+        <Search size={16} className={`absolute left-3.5 top-3 ${isDarkMode ? "text-slate-500" : "text-slate-400"}`} />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search by @handle to start a DM..."
+          className={`w-full rounded-2xl pl-10 pr-4 py-2.5 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-[#D6D6D6]" : "bg-white border-slate-200 text-slate-900"}`}
+        />
+      </div>
+
+      <div className="flex flex-col gap-2 mt-1">
+        <span className="text-[11px] font-semibold text-slate-400 px-1">Recent Chats</span>
+        {recentConversations.length === 0 ? (
+          <div className="text-center py-12 text-xs text-slate-500">No conversations yet.</div>
+        ) : (
+          recentConversations.map((chat) => (
+            <div
+              key={chat.userId}
+              onClick={() => onSelectChat(chat)}
+              className={`p-3.5 rounded-2xl flex items-center gap-3.5 cursor-pointer border transition-all ${
+                isDarkMode ? "bg-[#2C2B30] hover:bg-[#4F4F51]/40 border-[#4F4F51]" : "bg-white hover:bg-slate-100 border-slate-200"
+              }`}
+            >
+              <div className="relative">
+                <img src={chat.avatar} className="w-11 h-11 rounded-full object-cover" />
+                {chat.unread && <span className="absolute top-0 right-0 w-3 h-3 bg-[#F58F7C] rounded-full border-2 border-black" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <p className={`text-xs font-bold truncate ${isDarkMode ? "text-white" : "text-slate-900"}`}>@{chat.userId}</p>
+                  <span className="text-[10px] text-slate-500">{chat.time}</span>
+                </div>
+                <p className={`text-xs truncate mt-0.5 ${chat.unread ? "text-[#F58F7C] font-bold" : "text-slate-400"}`}>
+                  {chat.lastMessage}
+                </p>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }
@@ -1520,7 +2539,7 @@ function SettingsModal({ isDarkMode, setIsDarkMode, currentProfile, onClose, onO
   );
 }
 
-// --- NOTIFICATIONS DRAWER WITH CLICKABLE PROFILES ---
+// --- NOTIFICATIONS DRAWER ---
 function NotificationsDrawer({ isDarkMode, notifications, onClose, onOpenUserProfile }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex justify-end">
@@ -1566,514 +2585,6 @@ function NotificationsDrawer({ isDarkMode, notifications, onClose, onOpenUserPro
   );
 }
 
-// --- MESSAGES VIEW ---
-function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, onSelectChat, onBack }) {
-  const [messages, setMessages] = useState([]);
-  const [inputText, setInputText] = useState("");
-  const [loadingChat, setLoadingChat] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [recentConversations, setRecentConversations] = useState([]);
-  const messagesEndRef = useRef(null);
-
-  const getConversationId = (userA, userB) => [userA, userB].sort().join("_");
-
-  const fetchRecentConversations = async () => {
-    if (!currentUser || !currentHandle) return;
-    const { data } = await supabase
-      .from("messages")
-      .select("*")
-      .or(`sender_handle.eq.${currentHandle},recipient_handle.eq.${currentHandle}`)
-      .order("created_at", { ascending: false });
-
-    if (data) {
-      const convMap = new Map();
-      for (const m of data) {
-        const partner = m.sender_handle === currentHandle ? m.recipient_handle : m.sender_handle;
-        if (!convMap.has(partner)) {
-          convMap.set(partner, {
-            userId: partner,
-            username: partner,
-            avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
-            lastMessage: m.content,
-            time: new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-            unread: m.recipient_handle === currentHandle && !m.is_read
-          });
-        }
-      }
-      setRecentConversations(Array.from(convMap.values()));
-    }
-  };
-
-  useEffect(() => {
-    fetchRecentConversations();
-  }, [currentUser, currentHandle, activeChat]);
-
-  useEffect(() => {
-    if (!activeChat || !currentUser) return;
-    const convId = getConversationId(currentHandle, activeChat.userId);
-    setLoadingChat(true);
-
-    const loadMessages = async () => {
-      const { data } = await supabase.from("messages").select("*").eq("conversation_id", convId).order("created_at", { ascending: true });
-      if (data) setMessages(data);
-      setLoadingChat(false);
-      await supabase.from("messages").update({ is_read: true }).eq("conversation_id", convId).eq("recipient_handle", currentHandle);
-    };
-
-    loadMessages();
-
-    const channel = supabase
-      .channel(`chat_${convId}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${convId}` }, (payload) => {
-        setMessages((prev) => (prev.some((m) => m.id === payload.new.id) ? prev : [...prev, payload.new]));
-      })
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
-  }, [activeChat, currentUser, currentHandle]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  const handleSendSubmit = async (e) => {
-    e.preventDefault();
-    if (!inputText.trim() || !currentUser || !activeChat) return;
-    const text = inputText.trim();
-    setInputText("");
-    const convId = getConversationId(currentHandle, activeChat.userId);
-
-    await supabase.from("messages").insert([
-      { conversation_id: convId, sender_handle: currentHandle, recipient_handle: activeChat.userId, content: text, is_read: false }
-    ]);
-  };
-
-  if (activeChat) {
-    return (
-      <div className={`flex flex-col h-[78vh] rounded-3xl overflow-hidden border shadow-2xl ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-slate-200"}`}>
-        <div className={`px-4 py-3 border-b flex items-center gap-3 ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51]" : "bg-slate-100 border-slate-200"}`}>
-          <button onClick={onBack} className="p-1 text-slate-400 hover:text-white"><ArrowLeft size={18} /></button>
-          <img src={activeChat.avatar} className="w-8 h-8 rounded-full object-cover" />
-          <div className="flex-1 min-w-0">
-            <p className={`text-xs font-bold leading-tight truncate ${isDarkMode ? "text-white" : "text-slate-900"}`}>{activeChat.username}</p>
-            <p className="text-[10px] text-[#F58F7C] font-medium">@{activeChat.userId}</p>
-          </div>
-        </div>
-
-        <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3">
-          {loadingChat ? (
-            <div className="h-full flex items-center justify-center text-xs text-slate-500"><Loader2 size={16} className="animate-spin mr-2" /> Loading...</div>
-          ) : (
-            messages.map((msg) => {
-              const isMe = msg.sender_handle === currentHandle;
-              return (
-                <div key={msg.id} className={`flex flex-col max-w-[75%] ${isMe ? "self-end items-end" : "self-start items-start"}`}>
-                  <div className={`p-3 rounded-2xl text-xs leading-relaxed ${isMe ? "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold rounded-tr-none" : isDarkMode ? "bg-[#4F4F51] text-[#D6D6D6] rounded-tl-none" : "bg-slate-200 text-slate-900 rounded-tl-none"}`}>
-                    {msg.content}
-                  </div>
-                  <span className="text-[9px] text-slate-500 mt-1">{new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                </div>
-              );
-            })
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        <form onSubmit={handleSendSubmit} className={`p-3 border-t flex items-center gap-2 ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-slate-200"}`}>
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            placeholder={`Message @${activeChat.userId}...`}
-            className={`flex-1 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51] text-white" : "bg-slate-100 border-slate-200 text-slate-900"}`}
-          />
-          <button type="submit" disabled={!inputText.trim()} className="p-2 bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] hover:opacity-90 disabled:opacity-40 text-[#2C2B30] font-bold rounded-xl transition-all"><Send size={15} /></button>
-        </form>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="relative">
-        <Search size={16} className={`absolute left-3.5 top-3 ${isDarkMode ? "text-slate-500" : "text-slate-400"}`} />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search by @handle to start a DM..."
-          className={`w-full rounded-2xl pl-10 pr-4 py-2.5 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-[#D6D6D6]" : "bg-white border-slate-200 text-slate-900"}`}
-        />
-      </div>
-
-      <div className="flex flex-col gap-2 mt-1">
-        <span className="text-[11px] font-semibold text-slate-400 px-1">Recent Chats</span>
-        {recentConversations.length === 0 ? (
-          <div className="text-center py-12 text-xs text-slate-500">No conversations yet.</div>
-        ) : (
-          recentConversations.map((chat) => (
-            <div
-              key={chat.userId}
-              onClick={() => onSelectChat(chat)}
-              className={`p-3.5 rounded-2xl flex items-center gap-3.5 cursor-pointer border transition-all ${
-                isDarkMode ? "bg-[#2C2B30] hover:bg-[#4F4F51]/40 border-[#4F4F51]" : "bg-white hover:bg-slate-100 border-slate-200"
-              }`}
-            >
-              <div className="relative">
-                <img src={chat.avatar} className="w-11 h-11 rounded-full object-cover" />
-                {chat.unread && <span className="absolute top-0 right-0 w-3 h-3 bg-[#F58F7C] rounded-full border-2 border-black" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                  <p className={`text-xs font-bold truncate ${isDarkMode ? "text-white" : "text-slate-900"}`}>@{chat.userId}</p>
-                  <span className="text-[10px] text-slate-500">{chat.time}</span>
-                </div>
-                <p className={`text-xs truncate mt-0.5 ${chat.unread ? "text-[#F58F7C] font-bold" : "text-slate-400"}`}>
-                  {chat.lastMessage}
-                </p>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
-// --- SPARK CARD WITH GLASS CONTROLS & COMMENT TRIGGER ---
-function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUserProfile }) {
-  const videoRef = useRef(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
-  const [liked, setLiked] = useState(false);
-  const [progress, setProgress] = useState(0);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) { videoRef.current?.play().catch(() => {}); setIsPlaying(true); }
-      else { videoRef.current?.pause(); setIsPlaying(false); }
-    }, { threshold: 0.6 });
-    if (videoRef.current) observer.observe(videoRef.current);
-    return () => observer.disconnect();
-  }, []);
-
-  const togglePlay = () => {
-    if (videoRef.current) {
-      if (isPlaying) { videoRef.current.pause(); setIsPlaying(false); }
-      else { videoRef.current.play(); setIsPlaying(true); }
-    }
-  };
-
-  const handleTimeUpdate = () => {
-    if (videoRef.current && videoRef.current.duration) {
-      setProgress((videoRef.current.currentTime / videoRef.current.duration) * 100);
-    }
-  };
-
-  return (
-    <div className={`relative w-full ${heightClass} snap-start bg-black flex items-center justify-center overflow-hidden group`}>
-      <video
-        ref={videoRef}
-        src={spark.video_url}
-        loop
-        playsInline
-        muted={isMuted}
-        onTimeUpdate={handleTimeUpdate}
-        onClick={togglePlay}
-        className="w-full h-full object-cover cursor-pointer"
-      />
-
-      {/* Glass Center Play Ripple */}
-      {!isPlaying && (
-        <div onClick={togglePlay} className="absolute inset-0 bg-black/20 backdrop-blur-[1.5px] flex items-center justify-center cursor-pointer">
-          <div className="p-4 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-[#F2C4CE]/40 text-[#F58F7C]">
-            <Play size={26} className="fill-[#F58F7C] translate-x-0.5" />
-          </div>
-        </div>
-      )}
-
-      {/* Glass Top Audio Pill */}
-      <button
-        onClick={(e) => { e.stopPropagation(); setIsMuted(!isMuted); }}
-        className="absolute top-4 right-4 p-2 bg-[#2C2B30]/60 backdrop-blur-md rounded-full text-[#D6D6D6] hover:text-white z-10 border border-white/10"
-      >
-        {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
-      </button>
-
-      {/* Right Social Actions Column */}
-      <div className="absolute right-3 bottom-14 z-10 flex flex-col items-center gap-5">
-        <button onClick={() => setLiked(!liked)} className="flex flex-col items-center gap-1 group/btn">
-          <div className={`p-2.5 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 transition-transform group-hover/btn:scale-110 ${liked ? "text-[#F58F7C]" : "text-white"}`}>
-            <Heart size={22} className={liked ? "fill-[#F58F7C]" : ""} />
-          </div>
-          <span className="text-[11px] font-semibold text-white drop-shadow">{spark.likes_count || 0}</span>
-        </button>
-
-        <button onClick={() => onOpenComments(spark)} className="flex flex-col items-center gap-1 group/btn">
-          <div className="p-2.5 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 text-white transition-transform group-hover/btn:scale-110">
-            <MessageCircle size={22} />
-          </div>
-          <span className="text-[11px] font-semibold text-white drop-shadow">{spark.comments?.length || 0}</span>
-        </button>
-
-        <button className="p-2.5 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 text-white transition-transform hover:scale-110">
-          <Share2 size={22} />
-        </button>
-      </div>
-
-      {/* Caption & Glass Progress Track */}
-      <div className="absolute bottom-4 left-4 right-16 z-10 text-white flex flex-col gap-2 pointer-events-none">
-        <div className="flex items-center gap-2.5 pointer-events-auto cursor-pointer" onClick={() => onOpenUserProfile(spark.user_handle)}>
-          <img src={spark.user_avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"} className="w-8 h-8 rounded-full border border-[#F2C4CE]/50 object-cover" />
-          <span className="font-semibold text-sm hover:underline">@{spark.user_handle}</span>
-        </div>
-        {spark.caption && <p className="text-xs text-[#D6D6D6] line-clamp-2 leading-relaxed">{spark.caption}</p>}
-
-        {/* Glass Scrubber Bar */}
-        <div className="w-full h-1 bg-[#4F4F51]/70 backdrop-blur-md rounded-full overflow-hidden mt-1">
-          <div className="h-full bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE]" style={{ width: `${progress}%` }} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// --- UNIVERSAL COMMENTS DRAWER (POSTS & SPARKS) ---
-function CommentsDrawer({ isDarkMode, target, onClose, onAddComment, onOpenUserProfile }) {
-  const [commentInput, setCommentInput] = useState("");
-  const comments = target?.item?.comments || [];
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!commentInput.trim()) return;
-    onAddComment(commentInput.trim());
-    setCommentInput("");
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col justify-end p-0 sm:p-4">
-      <div className={`w-full max-w-md mx-auto h-[65vh] rounded-t-3xl sm:rounded-3xl flex flex-col overflow-hidden shadow-2xl border ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-slate-200"}`}>
-        <div className={`px-4 py-3 border-b flex items-center justify-between ${isDarkMode ? "border-[#4F4F51]" : "border-slate-200"}`}>
-          <h3 className="text-xs font-bold uppercase tracking-wider text-[#D6D6D6]">
-            Comments ({target.type === "spark" ? "Sparks" : "Post"})
-          </h3>
-          <button onClick={onClose} className="p-1 text-slate-400 hover:text-white"><X size={18} /></button>
-        </div>
-
-        <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3">
-          {comments.length === 0 ? (
-            <p className="text-xs text-slate-500 text-center py-12">No comments yet. Start the conversation!</p>
-          ) : (
-            comments.map((c) => (
-              <div key={c.id} className="flex gap-2.5 items-start">
-                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#F58F7C] to-[#F2C4CE] flex items-center justify-center text-[10px] font-bold text-[#2C2B30] flex-shrink-0">
-                  {c.user.charAt(0).toUpperCase()}
-                </div>
-                <div className={`flex-1 p-2.5 rounded-xl border ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51]" : "bg-slate-100 border-slate-200"}`}>
-                  <p
-                    onClick={() => onOpenUserProfile(c.user)}
-                    className="text-[11px] font-bold text-[#F58F7C] cursor-pointer hover:underline inline-block"
-                  >
-                    @{c.user}
-                  </p>
-                  <p className={`text-xs mt-0.5 ${isDarkMode ? "text-[#D6D6D6]" : "text-slate-800"}`}>{c.text}</p>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        <form onSubmit={handleSubmit} className={`p-3 border-t flex gap-2 ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-slate-200"}`}>
-          <input
-            type="text"
-            value={commentInput}
-            onChange={(e) => setCommentInput(e.target.value)}
-            placeholder="Add a comment..."
-            className={`flex-1 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51] text-white" : "bg-slate-100 border-slate-200 text-slate-900"}`}
-          />
-          <button type="submit" disabled={!commentInput.trim()} className="p-2 bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold rounded-xl disabled:opacity-40">
-            <Send size={14} />
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// --- CREATE POST MODAL ---
-function CreatePostModal({ isDarkMode, onClose, onSubmit }) {
-  const [postType, setPostType] = useState("text");
-  const [content, setContent] = useState("");
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const fileInputRef = useRef(null);
-
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setSelectedFile(file);
-      setPreviewUrl(URL.createObjectURL(file));
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!content.trim() && !selectedFile) return;
-
-    setIsUploading(true);
-    let uploadedMediaUrl = null;
-
-    try {
-      if (selectedFile) {
-        const fileExt = selectedFile.name.split(".").pop();
-        const fileName = `${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage.from("post-media").upload(fileName, selectedFile);
-        if (uploadError) throw uploadError;
-
-        const { data: publicUrlData } = supabase.storage.from("post-media").getPublicUrl(fileName);
-        uploadedMediaUrl = publicUrlData.publicUrl;
-      }
-
-      await onSubmit({
-        type: postType === "text" ? "text" : postType === "video" ? "video" : "media",
-        content: content.trim(),
-        mediaUrl: uploadedMediaUrl,
-      });
-    } catch (err) {
-      alert("Failed to upload: " + err.message);
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className={`w-full max-w-md rounded-3xl p-5 shadow-2xl relative border ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-white" : "bg-white border-slate-200 text-slate-900"}`}>
-        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
-        <h3 className="text-base font-bold mb-4">Create a Post</h3>
-
-        <div className="flex gap-2 mb-4">
-          <button
-            type="button"
-            onClick={() => { setPostType("text"); setSelectedFile(null); setPreviewUrl(null); }}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${postType === "text" ? "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold" : isDarkMode ? "bg-[#4F4F51] text-[#D6D6D6]" : "bg-slate-100 text-slate-600"}`}
-          >
-            <MessageSquare size={13} /> Text
-          </button>
-          <button
-            type="button"
-            onClick={() => { setPostType("photo"); setSelectedFile(null); setPreviewUrl(null); }}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${postType === "photo" ? "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold" : isDarkMode ? "bg-[#4F4F51] text-[#D6D6D6]" : "bg-slate-100 text-slate-600"}`}
-          >
-            <ImageIcon size={13} /> Photo
-          </button>
-          <button
-            type="button"
-            onClick={() => { setPostType("video"); setSelectedFile(null); setPreviewUrl(null); }}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${postType === "video" ? "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold" : isDarkMode ? "bg-[#4F4F51] text-[#D6D6D6]" : "bg-slate-100 text-slate-600"}`}
-          >
-            <Video size={13} /> Video
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <textarea
-            rows={3}
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder="What's happening? Type #hashtags to categorize..."
-            className={`w-full rounded-xl p-3 text-xs sm:text-sm focus:outline-none focus:border-[#F58F7C] resize-none border ${isDarkMode ? "bg-black/40 border-[#4F4F51] text-white" : "bg-slate-50 border-slate-200 text-slate-900"}`}
-          />
-
-          {postType !== "text" && (
-            <div>
-              <input type="file" accept={postType === "video" ? "video/*" : "image/*"} ref={fileInputRef} onChange={handleFileChange} className="hidden" />
-              {!previewUrl ? (
-                <div onClick={() => fileInputRef.current?.click()} className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer ${isDarkMode ? "border-[#4F4F51] hover:border-[#F58F7C] bg-black/40" : "border-slate-300 hover:border-[#F58F7C] bg-slate-50"}`}>
-                  <UploadCloud size={26} className="text-slate-500" />
-                  <span className="text-xs text-slate-400">Click to select {postType === "video" ? "video (.mp4)" : "photo"}</span>
-                </div>
-              ) : (
-                <div className="relative rounded-xl overflow-hidden border max-h-48 flex items-center justify-center">
-                  {postType === "video" ? <video src={previewUrl} className="w-full h-full object-cover max-h-48" autoPlay muted loop /> : <img src={previewUrl} className="w-full h-full object-cover max-h-48" />}
-                  <button type="button" onClick={() => { setSelectedFile(null); setPreviewUrl(null); }} className="absolute top-2 right-2 p-1.5 bg-black/70 text-white rounded-full"><X size={14} /></button>
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="flex items-center justify-between pt-2">
-            <span className="text-[11px] text-slate-500">{content.length}/280 chars</span>
-            <button type="submit" disabled={isUploading || (!content.trim() && !selectedFile)} className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] text-xs font-bold flex items-center gap-1.5">
-              {isUploading ? <><Loader2 size={13} className="animate-spin" /> Posting...</> : <><Send size={13} /> Post</>}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// --- EDIT PROFILE MODAL ---
-function EditProfileModal({ isDarkMode, currentProfile, onClose, onSave }) {
-  const [fullName, setFullName] = useState(currentProfile?.full_name || "");
-  const [bio, setBio] = useState(currentProfile?.bio || "");
-  const [avatarUrl, setAvatarUrl] = useState(currentProfile?.avatar_url || "");
-  const [uploading, setUploading] = useState(false);
-  const avatarInputRef = useRef(null);
-
-  const handleAvatarFileChange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const fileExt = file.name.split(".").pop();
-      const filePath = `avatar-${Date.now()}.${fileExt}`;
-      const { error } = await supabase.storage.from("avatars").upload(filePath, file);
-      if (error) throw error;
-      const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
-      setAvatarUrl(data.publicUrl);
-    } catch (err) {
-      alert("Avatar upload failed: " + err.message);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl relative border ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-white" : "bg-white border-slate-200 text-slate-900"}`}>
-        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
-        <h3 className="text-base font-bold mb-4 flex items-center gap-2"><Edit3 size={16} className="text-[#F58F7C]" /> Edit Profile</h3>
-        <form onSubmit={(e) => { e.preventDefault(); onSave({ full_name: fullName.trim(), bio: bio.trim(), avatar_url: avatarUrl }); }} className="flex flex-col gap-4">
-          <div className="flex flex-col items-center gap-2">
-            <div className="relative group cursor-pointer" onClick={() => avatarInputRef.current?.click()}>
-              <div className="p-0.5 rounded-full bg-gradient-to-tr from-[#F58F7C] to-[#F2C4CE]">
-                <img src={avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300"} className="w-20 h-20 rounded-full object-cover border-2 border-black" />
-              </div>
-              <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Camera size={20} className="text-white" /></div>
-            </div>
-            <input type="file" accept="image/*" ref={avatarInputRef} onChange={handleAvatarFileChange} className="hidden" />
-            <span className="text-[11px] text-slate-400">{uploading ? "Uploading..." : "Tap photo to change avatar"}</span>
-          </div>
-          <div>
-            <label className="text-[11px] font-semibold text-slate-400 block mb-1">Full Name</label>
-            <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className={`w-full rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-black/40 border-[#4F4F51] text-white" : "bg-slate-50 border-slate-200 text-slate-900"}`} />
-          </div>
-          <div>
-            <label className="text-[11px] font-semibold text-slate-400 block mb-1">Bio</label>
-            <textarea rows={3} value={bio} onChange={(e) => setBio(e.target.value)} className={`w-full rounded-xl p-3 text-xs focus:outline-none focus:border-[#F58F7C] resize-none border ${isDarkMode ? "bg-black/40 border-[#4F4F51] text-white" : "bg-slate-50 border-slate-200 text-slate-900"}`} />
-          </div>
-          <button type="submit" disabled={uploading} className="w-full py-2.5 bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold text-xs rounded-xl shadow-sm">
-            Save Profile
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
-
 // --- UPLOAD SPARK MODAL ---
 function UploadSparkModal({ isDarkMode, onClose, onSubmit }) {
   const [caption, setCaption] = useState("");
@@ -2098,6 +2609,7 @@ function UploadSparkModal({ isDarkMode, onClose, onSubmit }) {
       if (error) throw error;
       const { data } = supabase.storage.from("sparks-media").getPublicUrl(fileName);
       await supabase.from("sparks").insert([{ user_handle: "guest", video_url: data.publicUrl, caption: caption.trim() }]);
+      playHapticSFX("upload");
       onSubmit();
     } catch (err) {
       alert("Spark upload error: " + err.message);
@@ -2126,78 +2638,9 @@ function UploadSparkModal({ isDarkMode, onClose, onSubmit }) {
           )}
           <input type="text" value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Add caption and #hashtags..." className={`w-full rounded-xl p-2.5 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-black/40 border-[#4F4F51] text-white" : "bg-slate-50 border-slate-200 text-slate-900"}`} />
           <button type="submit" disabled={isUploading || !selectedFile} className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50">
-            {isUploading ? <><Loader2 size={13} className="animate-spin" /> Uploading...</> : <><Video size={13} /> Publish Spark</>}
+            {isUploading ? <><BrandLogo className="w-4 h-4 mr-1" animated /> Uploading...</> : <><Video size={13} /> Publish Spark</>}
           </button>
         </form>
-      </div>
-    </div>
-  );
-}
-
-// --- STORY VIEWER MODAL ---
-function StoryViewerModal({ stories, initialIndex, onClose }) {
-  const [currentIndex, setCurrentIndex] = useState(initialIndex);
-  const [progress, setProgress] = useState(0);
-  const [isPaused, setIsPaused] = useState(false);
-  const activeStory = stories[currentIndex];
-
-  useEffect(() => {
-    if (isPaused) return;
-    const step = 50;
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          if (currentIndex < stories.length - 1) {
-            setCurrentIndex((i) => i + 1);
-            return 0;
-          } else {
-            onClose();
-            return 100;
-          }
-        }
-        return prev + (step / 5000) * 100;
-      });
-    }, step);
-    return () => clearInterval(interval);
-  }, [currentIndex, isPaused]);
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center">
-      <div
-        className="relative w-full max-w-md h-full sm:h-[85vh] bg-black sm:rounded-3xl overflow-hidden flex flex-col shadow-2xl"
-        onMouseDown={() => setIsPaused(true)}
-        onMouseUp={() => setIsPaused(false)}
-        onTouchStart={() => setIsPaused(true)}
-        onTouchEnd={() => setIsPaused(false)}
-      >
-        <div className="absolute top-3 inset-x-0 z-20 flex gap-1.5 px-3">
-          {stories.map((_, i) => (
-            <div key={i} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] rounded-full transition-all duration-75 ease-linear" style={{ width: i === currentIndex ? `${progress}%` : i < currentIndex ? "100%" : "0%" }} />
-            </div>
-          ))}
-        </div>
-
-        <div className="absolute top-6 inset-x-0 z-20 flex items-center justify-between px-4">
-          <div className="flex items-center gap-2">
-            <img src={activeStory.userAvatar} className="w-8 h-8 rounded-full object-cover border border-[#F2C4CE]/50" />
-            <span className="font-semibold text-sm text-white">{activeStory.username}</span>
-          </div>
-          <button onClick={onClose} className="p-1 text-white/80 hover:text-white rounded-full bg-black/30">
-            <X size={20} />
-          </button>
-        </div>
-
-        <img key={activeStory.id} src={activeStory.mediaUrl} className="w-full h-full object-cover select-none" />
-
-        {activeStory.caption && (
-          <div className="absolute bottom-6 inset-x-4 bg-black/60 backdrop-blur-md p-3 rounded-2xl text-xs sm:text-sm text-white border border-white/10">
-            {activeStory.caption}
-          </div>
-        )}
-
-        <div className="absolute left-0 top-16 bottom-0 w-1/3 z-10 cursor-pointer" onClick={() => { if (currentIndex > 0) { setCurrentIndex((i) => i - 1); setProgress(0); } }} />
-        <div className="absolute right-0 top-16 bottom-0 w-2/3 z-10 cursor-pointer" onClick={() => { if (currentIndex < stories.length - 1) { setCurrentIndex((i) => i + 1); setProgress(0); } else { onClose(); } }} />
       </div>
     </div>
   );
