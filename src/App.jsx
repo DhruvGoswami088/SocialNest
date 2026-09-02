@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { supabase } from "./supabaseClient";
 import {
   X,
   Bell,
@@ -24,7 +25,9 @@ import {
   Mail,
   ArrowLeft,
   Search,
-  CheckCheck
+  CheckCheck,
+  UploadCloud,
+  Loader2
 } from "lucide-react";
 
 // --- STORY MODES ---
@@ -73,37 +76,6 @@ const SAMPLE_STORIES = [
     mediaUrl: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=800",
     category: "normal",
     caption: "Check out the newest Sparks clips!",
-  },
-];
-
-const INITIAL_FEED_POSTS = [
-  {
-    id: "post-1",
-    type: "text",
-    username: "alex_dev",
-    userAvatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
-    timeAgo: "15m",
-    content: "Why do we always overcomplicate CSS when flex and grid literally solve 99% of frontend problems? Keep it simple, folks. 🚀",
-    likes: 42,
-    reposts: 5,
-    comments: [
-      { id: "c1", user: "sarah_m", text: "100% agreed! Grid for layout, flex for components." },
-      { id: "c2", user: "marcus_code", text: "Tell that to people centering a div in 2015 haha." }
-    ],
-  },
-  {
-    id: "post-2",
-    type: "media",
-    username: "sarah_m",
-    userAvatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150",
-    timeAgo: "2h",
-    content: "Work setup for the day. High focus mode activated! 💻🎧",
-    mediaUrl: "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=800",
-    likes: 189,
-    reposts: 12,
-    comments: [
-      { id: "c3", user: "alex_dev", text: "Clean cable management!" }
-    ],
   },
 ];
 
@@ -176,10 +148,11 @@ const USER_PROFILE = {
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("home"); // "home" | "sparks" | "messages" | "profile"
+  const [activeTab, setActiveTab] = useState("home");
   const [selectedStoryIndex, setSelectedStoryIndex] = useState(null);
   const [activeFilter, setActiveFilter] = useState("all");
-  const [posts, setPosts] = useState(INITIAL_FEED_POSTS);
+  const [posts, setPosts] = useState([]);
+  const [loadingPosts, setLoadingPosts] = useState(true);
   const [chats, setChats] = useState(INITIAL_CHATS);
   const [activeChat, setActiveChat] = useState(null);
   const [activeCommentPost, setActiveCommentPost] = useState(null);
@@ -190,9 +163,129 @@ export default function App() {
       ? SAMPLE_STORIES
       : SAMPLE_STORIES.filter((s) => s.category === activeFilter);
 
-  const handleAddNewPost = (newPost) => {
-    setPosts([newPost, ...posts]);
-    setIsCreateOpen(false);
+  // Fetch real posts from Supabase
+  const fetchPosts = async () => {
+    try {
+      setLoadingPosts(true);
+      const { data, error } = await supabase
+        .from("posts")
+        .select("*, comments(*)")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      const formatted = (data || []).map((p) => ({
+        id: p.id,
+        type: p.post_type,
+        username: p.user_handle,
+        userAvatar: p.user_avatar || USER_PROFILE.avatar,
+        timeAgo: new Date(p.created_at).toLocaleDateString([], {
+          month: "short",
+          day: "numeric",
+        }),
+        content: p.content,
+        mediaUrl: p.media_url,
+        likes: p.likes_count || 0,
+        reposts: 0,
+        comments: (p.comments || []).map((c) => ({
+          id: c.id,
+          user: c.user_handle,
+          text: c.content,
+        })),
+      }));
+
+      setPosts(formatted);
+    } catch (err) {
+      console.error("Error fetching posts:", err.message);
+    } finally {
+      setLoadingPosts(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPosts();
+  }, []);
+
+  const handleAddNewPost = async (newPost) => {
+    try {
+      const { error } = await supabase
+        .from("posts")
+        .insert([
+          {
+            user_handle: newPost.username,
+            user_avatar: newPost.userAvatar,
+            content: newPost.content,
+            media_url: newPost.mediaUrl,
+            post_type: newPost.type,
+            likes_count: 0,
+          },
+        ]);
+
+      if (error) throw error;
+
+      fetchPosts();
+      setIsCreateOpen(false);
+    } catch (err) {
+      console.error("Error creating post:", err.message);
+      alert("Failed to post: " + err.message);
+    }
+  };
+
+  const handleLikePost = async (postId, currentLikes, isLiked) => {
+    const updatedCount = isLiked ? Math.max(0, currentLikes - 1) : currentLikes + 1;
+
+    // Optimistic UI update
+    setPosts((prev) =>
+      prev.map((p) => (p.id === postId ? { ...p, likes: updatedCount } : p))
+    );
+
+    try {
+      await supabase
+        .from("posts")
+        .update({ likes_count: updatedCount })
+        .eq("id", postId);
+    } catch (err) {
+      console.error("Error syncing like:", err.message);
+    }
+  };
+
+  const handleAddComment = async (postId, commentText) => {
+    try {
+      const { data, error } = await supabase
+        .from("comments")
+        .insert([
+          {
+            post_id: postId,
+            user_handle: USER_PROFILE.handle,
+            content: commentText,
+          },
+        ])
+        .select();
+
+      if (error) throw error;
+
+      const createdComment = {
+        id: data[0].id,
+        user: data[0].user_handle,
+        text: data[0].content,
+      };
+
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId
+            ? { ...p, comments: [...p.comments, createdComment] }
+            : p
+        )
+      );
+
+      setActiveCommentPost((prev) =>
+        prev && prev.id === postId
+          ? { ...prev, comments: [...prev.comments, createdComment] }
+          : prev
+      );
+    } catch (err) {
+      console.error("Error posting comment:", err.message);
+    }
   };
 
   const handleSendMessage = (chatId, text) => {
@@ -216,18 +309,6 @@ export default function App() {
 
     setChats(updatedChats);
     setActiveChat(updatedChats.find((c) => c.id === chatId));
-  };
-
-  const handleAddComment = (postId, commentText) => {
-    const updated = posts.map((p) => {
-      if (p.id === postId) {
-        const newC = { id: "c-" + Date.now(), user: USER_PROFILE.handle, text: commentText };
-        return { ...p, comments: [...p.comments, newC] };
-      }
-      return p;
-    });
-    setPosts(updated);
-    setActiveCommentPost(updated.find((p) => p.id === postId));
   };
 
   return (
@@ -263,8 +344,10 @@ export default function App() {
             setActiveFilter={setActiveFilter}
             onSelectStory={(idx) => setSelectedStoryIndex(idx)}
             posts={posts}
+            loading={loadingPosts}
             onOpenCreate={() => setIsCreateOpen(true)}
             onOpenComments={(post) => setActiveCommentPost(post)}
+            onLikePost={handleLikePost}
           />
         )}
 
@@ -307,7 +390,6 @@ export default function App() {
             <span className="text-[10px] font-medium">Feed</span>
           </button>
 
-          {/* Sparks with lightning bolt */}
           <button
             onClick={() => {
               setActiveTab("sparks");
@@ -321,7 +403,6 @@ export default function App() {
             <span className="text-[10px] font-medium">Sparks</span>
           </button>
 
-          {/* Post Creation Studio */}
           <button
             onClick={() => setIsCreateOpen(true)}
             className="p-2.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-600 text-black font-bold shadow-lg shadow-amber-500/20 active:scale-95 transition-transform"
@@ -329,7 +410,6 @@ export default function App() {
             <PlusSquare size={20} />
           </button>
 
-          {/* Messages */}
           <button
             onClick={() => setActiveTab("messages")}
             className={`flex flex-col items-center gap-1 transition-colors ${
@@ -340,7 +420,6 @@ export default function App() {
             <span className="text-[10px] font-medium">Chats</span>
           </button>
 
-          {/* Profile */}
           <button
             onClick={() => {
               setActiveTab("profile");
@@ -386,7 +465,7 @@ export default function App() {
 }
 
 // --- HOME VIEW ---
-function HomeView({ stories, activeFilter, setActiveFilter, onSelectStory, posts, onOpenCreate, onOpenComments }) {
+function HomeView({ stories, activeFilter, setActiveFilter, onSelectStory, posts, loading, onOpenCreate, onOpenComments, onLikePost }) {
   return (
     <div className="flex flex-col gap-4">
       {/* Categorized Story Tray */}
@@ -448,7 +527,7 @@ function HomeView({ stories, activeFilter, setActiveFilter, onSelectStory, posts
           src={USER_PROFILE.avatar}
           className="w-9 h-9 rounded-full object-cover border border-slate-800"
         />
-        <span className="text-xs text-slate-400 flex-1">Share a thought or start a debate...</span>
+        <span className="text-xs text-slate-400 flex-1">Share a thought or photo...</span>
         <div className="flex items-center gap-2 text-slate-400">
           <MessageSquare size={16} />
           <ImageIcon size={16} />
@@ -457,22 +536,33 @@ function HomeView({ stories, activeFilter, setActiveFilter, onSelectStory, posts
 
       {/* Feed List */}
       <div className="flex flex-col gap-3.5">
-        {posts.map((post) => (
-          <FeedCard key={post.id} post={post} onOpenComments={() => onOpenComments(post)} />
-        ))}
+        {loading ? (
+          <p className="text-xs text-slate-500 text-center py-8">Loading posts from database...</p>
+        ) : posts.length === 0 ? (
+          <p className="text-xs text-slate-500 text-center py-8">No posts found. Be the first to share something!</p>
+        ) : (
+          posts.map((post) => (
+            <FeedCard
+              key={post.id}
+              post={post}
+              onOpenComments={() => onOpenComments(post)}
+              onLikePost={onLikePost}
+            />
+          ))
+        )}
       </div>
     </div>
   );
 }
 
 // --- FEED CARD ---
-function FeedCard({ post, onOpenComments }) {
+function FeedCard({ post, onOpenComments, onLikePost }) {
   const [liked, setLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(post.likes);
 
   const toggleLike = () => {
-    setLiked(!liked);
-    setLikeCount((prev) => (liked ? prev - 1 : prev + 1));
+    const nextLiked = !liked;
+    setLiked(nextLiked);
+    onLikePost(post.id, post.likes, liked);
   };
 
   return (
@@ -485,20 +575,22 @@ function FeedCard({ post, onOpenComments }) {
               <span className="text-xs font-bold text-slate-200">@{post.username}</span>
               <span className="text-[11px] text-slate-500">· {post.timeAgo}</span>
             </div>
-            {post.type === "text" && (
-              <span className="text-[10px] text-amber-400 font-medium">Thought</span>
-            )}
+            <span className="text-[10px] text-amber-400 font-medium capitalize">
+              {post.type === "media" ? "Photo Post" : "Thought"}
+            </span>
           </div>
         </div>
       </div>
 
-      <p className="text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-line mb-3">
-        {post.content}
-      </p>
+      {post.content && (
+        <p className="text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-line mb-3">
+          {post.content}
+        </p>
+      )}
 
       {post.type === "media" && post.mediaUrl && (
-        <div className="rounded-xl overflow-hidden mb-3 border border-slate-800 max-h-80 bg-slate-950">
-          <img src={post.mediaUrl} className="w-full h-full object-cover" />
+        <div className="rounded-xl overflow-hidden mb-3 border border-slate-800 max-h-96 bg-slate-950 flex items-center justify-center">
+          <img src={post.mediaUrl} className="w-full h-full object-cover max-h-96" alt="" />
         </div>
       )}
 
@@ -511,7 +603,7 @@ function FeedCard({ post, onOpenComments }) {
           }`}
         >
           <Heart size={16} className={liked ? "fill-rose-500" : ""} />
-          <span>{likeCount}</span>
+          <span>{post.likes}</span>
         </button>
 
         <button
@@ -535,7 +627,7 @@ function FeedCard({ post, onOpenComments }) {
   );
 }
 
-// --- MESSAGES & ACTIVE DM VIEW ---
+// --- MESSAGES VIEW ---
 function MessagesView({ chats, activeChat, onSelectChat, onBack, onSend }) {
   const [inputText, setInputText] = useState("");
   const messagesEndRef = useRef(null);
@@ -551,11 +643,9 @@ function MessagesView({ chats, activeChat, onSelectChat, onBack, onSend }) {
     setInputText("");
   };
 
-  // Direct Chat Room
   if (activeChat) {
     return (
       <div className="flex flex-col h-[78vh] bg-slate-900/40 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
-        {/* Chat Room Header */}
         <div className="px-4 py-3 bg-slate-900/90 border-b border-slate-800 flex items-center gap-3">
           <button onClick={onBack} className="p-1 text-slate-400 hover:text-white">
             <ArrowLeft size={18} />
@@ -572,7 +662,6 @@ function MessagesView({ chats, activeChat, onSelectChat, onBack, onSend }) {
           </div>
         </div>
 
-        {/* Message Stream */}
         <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3">
           {activeChat.messages.map((msg) => {
             const isMe = msg.sender === "me";
@@ -600,7 +689,6 @@ function MessagesView({ chats, activeChat, onSelectChat, onBack, onSend }) {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Message Input */}
         <form onSubmit={handleSendSubmit} className="p-3 bg-slate-950/80 border-t border-slate-800 flex items-center gap-2">
           <input
             type="text"
@@ -621,7 +709,6 @@ function MessagesView({ chats, activeChat, onSelectChat, onBack, onSend }) {
     );
   }
 
-  // Chats List Overview
   return (
     <div className="flex flex-col gap-3">
       <div className="relative">
@@ -721,30 +808,62 @@ function CommentsDrawer({ post, onClose, onAddComment }) {
   );
 }
 
-// --- CREATE MODAL ---
+// --- CREATE MODAL WITH DEVICE FILE UPLOAD ---
 function CreatePostModal({ onClose, onSubmit }) {
   const [postType, setPostType] = useState("text");
   const [content, setContent] = useState("");
-  const [mediaUrl, setMediaUrl] = useState("");
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
-  const handleSubmit = (e) => {
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setSelectedFile(file);
+      setPreviewUrl(URL.createObjectURL(file));
+    }
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!content.trim() && !mediaUrl.trim()) return;
+    if (!content.trim() && !selectedFile) return;
 
-    const newPost = {
-      id: "post-" + Date.now(),
-      type: postType,
-      username: USER_PROFILE.handle,
-      userAvatar: USER_PROFILE.avatar,
-      timeAgo: "Just now",
-      content: content.trim(),
-      mediaUrl: postType === "media" ? mediaUrl.trim() : null,
-      likes: 0,
-      reposts: 0,
-      comments: [],
-    };
+    setIsUploading(true);
+    let uploadedMediaUrl = null;
 
-    onSubmit(newPost);
+    try {
+      if (postType === "media" && selectedFile) {
+        const fileExt = selectedFile.name.split(".").pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+        const filePath = `${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("post-media")
+          .upload(filePath, selectedFile);
+
+        if (uploadError) throw uploadError;
+
+        const { data: publicUrlData } = supabase.storage
+          .from("post-media")
+          .getPublicUrl(filePath);
+
+        uploadedMediaUrl = publicUrlData.publicUrl;
+      }
+
+      await onSubmit({
+        type: postType,
+        username: USER_PROFILE.handle,
+        userAvatar: USER_PROFILE.avatar,
+        content: content.trim(),
+        mediaUrl: uploadedMediaUrl,
+      });
+    } catch (err) {
+      console.error("Upload error:", err.message);
+      alert("Failed to upload image: " + err.message);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   return (
@@ -759,12 +878,16 @@ function CreatePostModal({ onClose, onSubmit }) {
         <div className="flex gap-2 mb-4">
           <button
             type="button"
-            onClick={() => setPostType("text")}
+            onClick={() => {
+              setPostType("text");
+              setSelectedFile(null);
+              setPreviewUrl(null);
+            }}
             className={`flex-1 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
               postType === "text" ? "bg-white text-slate-950" : "bg-slate-800 text-slate-400 hover:text-white"
             }`}
           >
-            <MessageSquare size={14} /> Thought (Text)
+            <MessageSquare size={14} /> Thought
           </button>
           <button
             type="button"
@@ -773,13 +896,13 @@ function CreatePostModal({ onClose, onSubmit }) {
               postType === "media" ? "bg-white text-slate-950" : "bg-slate-800 text-slate-400 hover:text-white"
             }`}
           >
-            <ImageIcon size={14} /> Photo Post
+            <ImageIcon size={14} /> Photo
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <textarea
-            rows={4}
+            rows={3}
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder={
@@ -791,23 +914,57 @@ function CreatePostModal({ onClose, onSubmit }) {
           />
 
           {postType === "media" && (
-            <input
-              type="text"
-              value={mediaUrl}
-              onChange={(e) => setMediaUrl(e.target.value)}
-              placeholder="Paste image URL (e.g. from Unsplash)..."
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
-            />
+            <div>
+              <input
+                type="file"
+                accept="image/*"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                className="hidden"
+              />
+
+              {!previewUrl ? (
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-slate-800 hover:border-amber-500/50 rounded-xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors bg-slate-950/50"
+                >
+                  <UploadCloud size={28} className="text-slate-500" />
+                  <span className="text-xs text-slate-400">Click to browse photo from device</span>
+                </div>
+              ) : (
+                <div className="relative rounded-xl overflow-hidden border border-slate-800 max-h-48 bg-slate-950 flex items-center justify-center">
+                  <img src={previewUrl} alt="Preview" className="w-full h-full object-cover max-h-48" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedFile(null);
+                      setPreviewUrl(null);
+                    }}
+                    className="absolute top-2 right-2 p-1.5 bg-black/70 hover:bg-black text-white rounded-full transition-colors"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
           )}
 
           <div className="flex items-center justify-between pt-2">
             <span className="text-[11px] text-slate-500">{content.length}/280 chars</span>
             <button
               type="submit"
-              disabled={!content.trim()}
+              disabled={isUploading || (!content.trim() && !selectedFile)}
               className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black text-xs font-bold flex items-center gap-1.5 shadow-md shadow-amber-500/20"
             >
-              <Send size={13} /> Post
+              {isUploading ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" /> Uploading...
+                </>
+              ) : (
+                <>
+                  <Send size={13} /> Post
+                </>
+              )}
             </button>
           </div>
         </form>
