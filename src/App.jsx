@@ -74,27 +74,6 @@ const SAMPLE_STORIES = [
   },
 ];
 
-const SAMPLE_CONTACTS = [
-  {
-    userId: "sarah_m",
-    username: "Sarah Miller",
-    avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150",
-    online: true,
-  },
-  {
-    userId: "marcus_code",
-    username: "Marcus Chen",
-    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
-    online: false,
-  },
-  {
-    userId: "nest_bot",
-    username: "SocialNest Support",
-    avatar: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150",
-    online: true,
-  }
-];
-
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -111,6 +90,7 @@ export default function App() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isUploadSparkOpen, setIsUploadSparkOpen] = useState(false);
 
+  // Auth session listener
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setCurrentUser(session?.user ?? null);
@@ -128,7 +108,11 @@ export default function App() {
     handle: currentUser?.user_metadata?.handle || (currentUser ? currentUser.email.split("@")[0] : "guest"),
     avatar: currentUser?.user_metadata?.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300",
     bio: currentUser ? "Building Social Nest 🛠️" : "Browse mode. Sign in to post, like, and chat!",
-    stats: { posts: posts.filter((p) => p.username === (currentUser?.user_metadata?.handle || currentUser?.email?.split("@")[0])).length, followers: "120", following: 45 },
+    stats: { 
+      posts: posts.filter((p) => p.username === (currentUser?.user_metadata?.handle || currentUser?.email?.split("@")[0])).length, 
+      followers: "120", 
+      following: 45 
+    },
     posts: [
       "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=400",
       "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=400",
@@ -675,26 +659,96 @@ function FeedCard({ post, onOpenComments, onLikePost }) {
   );
 }
 
-// --- REAL-TIME MESSAGING COMPONENT ---
+// --- MESSAGES VIEW WITH DYNAMIC SEARCH ---
 function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, onBack, onOpenAuth }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
   const [loadingChat, setLoadingChat] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [recentConversations, setRecentConversations] = useState([]);
   const messagesEndRef = useRef(null);
 
-  // Derive conversation ID deterministically so both users share the exact same room
   const getConversationId = (userA, userB) => {
     return [userA, userB].sort().join("_");
   };
 
-  // Realtime subscription and message fetching
+  const fetchRecentConversations = async () => {
+    if (!currentUser || !currentHandle) return;
+
+    const { data, error } = await supabase
+      .from("messages")
+      .select("sender_handle, recipient_handle, created_at, content")
+      .or(`sender_handle.eq.${currentHandle},recipient_handle.eq.${currentHandle}`)
+      .order("created_at", { ascending: false });
+
+    if (!error && data) {
+      const distinctUsers = new Set();
+      const recents = [];
+
+      for (const m of data) {
+        const partner = m.sender_handle === currentHandle ? m.recipient_handle : m.sender_handle;
+        if (!distinctUsers.has(partner)) {
+          distinctUsers.add(partner);
+          recents.push({
+            userId: partner,
+            username: partner,
+            avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
+            lastMessage: m.content,
+            time: new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+          });
+        }
+      }
+      setRecentConversations(recents);
+    }
+  };
+
+  useEffect(() => {
+    fetchRecentConversations();
+  }, [currentUser, currentHandle, activeChat]);
+
+  // Live profile search
+  useEffect(() => {
+    const handleSearch = async () => {
+      const cleanQuery = searchQuery.trim().toLowerCase().replace("@", "");
+      if (!cleanQuery) {
+        setSearchResults([]);
+        return;
+      }
+
+      setIsSearching(true);
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("handle, full_name, avatar_url")
+        .ilike("handle", `%${cleanQuery}%`)
+        .neq("handle", currentHandle)
+        .limit(8);
+
+      if (!error && data) {
+        setSearchResults(
+          data.map((p) => ({
+            userId: p.handle,
+            username: p.full_name || p.handle,
+            avatar: p.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
+            online: true,
+          }))
+        );
+      }
+      setIsSearching(false);
+    };
+
+    const debounceTimer = setTimeout(handleSearch, 250);
+    return () => clearTimeout(debounceTimer);
+  }, [searchQuery, currentHandle]);
+
+  // Realtime subscription
   useEffect(() => {
     if (!activeChat || !currentUser) return;
 
     const convId = getConversationId(currentHandle, activeChat.userId);
     setLoadingChat(true);
 
-    // 1. Initial historical fetch
     const fetchChatMessages = async () => {
       const { data, error } = await supabase
         .from("messages")
@@ -710,7 +764,6 @@ function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, on
 
     fetchChatMessages();
 
-    // 2. Realtime listener for incoming messages in this conversation
     const channel = supabase
       .channel(`chat_${convId}`)
       .on(
@@ -768,7 +821,7 @@ function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, on
         <Mail size={36} className="text-amber-400 opacity-60" />
         <h3 className="text-sm font-bold">Sign In to Send Messages</h3>
         <p className="text-xs text-slate-400 max-w-xs">
-          Connect with friends and chat in real-time.
+          Search creators and chat in real-time.
         </p>
         <button
           onClick={onOpenAuth}
@@ -787,26 +840,21 @@ function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, on
           <button onClick={onBack} className="p-1 text-slate-400 hover:text-white">
             <ArrowLeft size={18} />
           </button>
-          <div className="relative">
-            <img src={activeChat.avatar} className="w-8 h-8 rounded-full object-cover" />
-            {activeChat.online && (
-              <span className="absolute bottom-0 right-0 w-2 h-2 bg-emerald-500 rounded-full border border-slate-900" />
-            )}
-          </div>
-          <div>
-            <p className="text-xs font-bold leading-tight">{activeChat.username}</p>
-            <p className="text-[10px] text-emerald-400 font-medium">Realtime Connected</p>
+          <img src={activeChat.avatar} className="w-8 h-8 rounded-full object-cover border border-slate-800" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold leading-tight truncate">{activeChat.username}</p>
+            <p className="text-[10px] text-amber-400 font-medium">@{activeChat.userId}</p>
           </div>
         </div>
 
         <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3">
           {loadingChat ? (
             <div className="h-full flex items-center justify-center text-xs text-slate-500">
-              <Loader2 size={16} className="animate-spin mr-2" /> Loading chat history...
+              <Loader2 size={16} className="animate-spin mr-2" /> Loading conversation...
             </div>
           ) : messages.length === 0 ? (
             <p className="text-xs text-slate-500 text-center py-12">
-              Say hello! Messages will update live instantly.
+              Start a new conversation with @{activeChat.userId}!
             </p>
           ) : (
             messages.map((msg) => {
@@ -863,39 +911,75 @@ function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, on
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Search Bar */}
       <div className="relative">
         <Search size={16} className="absolute left-3.5 top-3 text-slate-500" />
         <input
           type="text"
-          placeholder="Search conversations..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search by @handle to start a DM..."
           className="w-full bg-slate-900/60 border border-slate-800 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500"
         />
+        {isSearching && (
+          <Loader2 size={15} className="absolute right-3.5 top-3 animate-spin text-amber-400" />
+        )}
       </div>
 
-      <div className="flex flex-col gap-2 mt-1">
-        {SAMPLE_CONTACTS.map((contact) => (
-          <div
-            key={contact.userId}
-            onClick={() => onSelectChat(contact)}
-            className="bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800/70 p-3.5 rounded-2xl flex items-center gap-3.5 cursor-pointer transition-all active:scale-[0.99]"
-          >
-            <div className="relative">
-              <img src={contact.avatar} className="w-11 h-11 rounded-full object-cover border border-slate-800" />
-              {contact.online && (
-                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-slate-950" />
-              )}
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold text-white truncate">{contact.username}</p>
-                <span className="text-[10px] text-emerald-400 font-medium">Live</span>
+      {searchQuery.trim() ? (
+        <div className="flex flex-col gap-2 mt-1">
+          <span className="text-[11px] font-semibold text-slate-400 px-1">Search Results</span>
+          {searchResults.length === 0 && !isSearching ? (
+            <p className="text-xs text-slate-500 py-6 text-center">No creator found with that handle.</p>
+          ) : (
+            searchResults.map((user) => (
+              <div
+                key={user.userId}
+                onClick={() => {
+                  onSelectChat(user);
+                  setSearchQuery("");
+                }}
+                className="bg-slate-900/60 hover:bg-slate-900 border border-slate-800/80 p-3 rounded-2xl flex items-center gap-3 cursor-pointer transition-all active:scale-[0.99]"
+              >
+                <img src={user.avatar} className="w-10 h-10 rounded-full object-cover border border-slate-800" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-white truncate">{user.username}</p>
+                  <p className="text-[11px] text-amber-400">@{user.userId}</p>
+                </div>
+                <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                  Chat
+                </span>
               </div>
-              <p className="text-xs text-slate-400 truncate mt-0.5">@{contact.userId}</p>
+            ))
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2 mt-1">
+          <span className="text-[11px] font-semibold text-slate-400 px-1">Recent Chats</span>
+          {recentConversations.length === 0 ? (
+            <div className="text-center py-12 text-xs text-slate-500">
+              No conversations yet. Type your friend's handle in the search bar above to start talking!
             </div>
-          </div>
-        ))}
-      </div>
+          ) : (
+            recentConversations.map((chat) => (
+              <div
+                key={chat.userId}
+                onClick={() => onSelectChat(chat)}
+                className="bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800/70 p-3.5 rounded-2xl flex items-center gap-3.5 cursor-pointer transition-all active:scale-[0.99]"
+              >
+                <img src={chat.avatar} className="w-11 h-11 rounded-full object-cover border border-slate-800" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold text-white truncate">@{chat.userId}</p>
+                    <span className="text-[10px] text-slate-500">{chat.time}</span>
+                  </div>
+                  <p className="text-xs text-slate-400 truncate mt-0.5">{chat.lastMessage}</p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
