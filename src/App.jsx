@@ -22,7 +22,6 @@ import {
   Image as ImageIcon,
   MessageSquare,
   Repeat,
-  Mail,
   ArrowLeft,
   Search,
   CheckCheck,
@@ -36,13 +35,23 @@ import {
   UserPlus,
   UserCheck,
   Edit3,
-  Hash
+  Hash,
+  MessageSquareText,
+  Sun,
+  Moon,
+  ChevronDown,
+  Lock,
+  Eye,
+  Sparkles,
+  Play,
+  Pause,
+  Users
 } from "lucide-react";
 
 const STORY_MODES = {
-  announcement: { label: "Important", color: "from-amber-500 via-red-500 to-rose-600", icon: Bell, duration: 7000 },
-  routine: { label: "Daily", color: "from-cyan-400 via-teal-500 to-emerald-500", icon: Camera, duration: 5000 },
-  normal: { label: "Sparks", color: "from-amber-400 via-orange-500 to-rose-500", icon: Zap, duration: 5000 },
+  announcement: { label: "Important", color: "from-[#F58F7C] via-[#F2C4CE] to-[#D6D6D6]", icon: Bell, duration: 7000 },
+  routine: { label: "Daily", color: "from-[#F2C4CE] via-[#4F4F51] to-[#2C2B30]", icon: Camera, duration: 5000 },
+  normal: { label: "Sparks", color: "from-[#F58F7C] via-[#F2C4CE] to-[#4F4F51]", icon: Zap, duration: 5000 },
 };
 
 const SAMPLE_STORIES = [
@@ -52,7 +61,7 @@ const SAMPLE_STORIES = [
     userAvatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
     mediaUrl: "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800",
     category: "announcement",
-    caption: "🚀 Social Nest v2.2 with bookmarks & saved collections!",
+    caption: "🚀 Social Nest upgraded with glass controls and new theme!",
   },
   {
     id: "s2",
@@ -66,13 +75,20 @@ const SAMPLE_STORIES = [
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [profile, setProfile] = useState(null);
-  const [authModalOpen, setAuthModalOpen] = useState(false);
+
+  // Settings & Theme
+  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [viewedUserProfile, setViewedUserProfile] = useState(null); // Clickable User Profile Modal
 
+  // Views & Filters
   const [activeTab, setActiveTab] = useState("home");
   const [feedFilter, setFeedFilter] = useState("all");
+  const [feedDropdownOpen, setFeedDropdownOpen] = useState(false);
   const [searchFilterTag, setSearchFilterTag] = useState("");
   const [feedSearchQuery, setFeedSearchQuery] = useState("");
 
@@ -88,7 +104,7 @@ export default function App() {
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [loadingSparks, setLoadingSparks] = useState(true);
   const [activeChat, setActiveChat] = useState(null);
-  const [activeCommentPost, setActiveCommentPost] = useState(null);
+  const [activeCommentTarget, setActiveCommentTarget] = useState(null); // { type: 'post'|'spark', item: obj }
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isUploadSparkOpen, setIsUploadSparkOpen] = useState(false);
 
@@ -116,6 +132,7 @@ export default function App() {
       const u = session?.user ?? null;
       setCurrentUser(u);
       if (u) fetchUserProfile(u.id, u.user_metadata, u.email);
+      setAuthChecked(true);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -123,6 +140,7 @@ export default function App() {
       setCurrentUser(u);
       if (u) fetchUserProfile(u.id, u.user_metadata, u.email);
       else setProfile(null);
+      setAuthChecked(true);
     });
 
     return () => subscription.unsubscribe();
@@ -131,10 +149,8 @@ export default function App() {
   const currentHandle = profile?.handle || (currentUser ? currentUser.email.split("@")[0] : "guest");
   const currentAvatar = profile?.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300";
 
-  // Fetch likes and bookmarks for current user
   const fetchUserEngagements = async () => {
     if (!currentHandle || currentHandle === "guest") return;
-
     const { data: likes } = await supabase.from("post_likes").select("post_id").eq("user_handle", currentHandle);
     if (likes) setLikedPostIds(new Set(likes.map((l) => l.post_id)));
 
@@ -156,10 +172,9 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!currentUser) return;
     fetchUserEngagements();
     fetchMetaData();
-
-    if (!currentHandle || currentHandle === "guest") return;
 
     const channel = supabase
       .channel("notif_msg_channel")
@@ -172,7 +187,7 @@ export default function App() {
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  }, [currentHandle]);
+  }, [currentHandle, currentUser]);
 
   const fetchPosts = async () => {
     try {
@@ -203,9 +218,21 @@ export default function App() {
   const fetchSparks = async () => {
     try {
       setLoadingSparks(true);
-      const { data, error } = await supabase.from("sparks").select("*").order("created_at", { ascending: false });
+      const { data: sparkData, error } = await supabase.from("sparks").select("*").order("created_at", { ascending: false });
       if (error) throw error;
-      setSparks(data || []);
+
+      const { data: commentData } = await supabase.from("spark_comments").select("*");
+
+      const enriched = (sparkData || []).map((s) => ({
+        ...s,
+        comments: (commentData || []).filter((c) => c.spark_id === String(s.id)).map((c) => ({
+          id: c.id,
+          user: c.user_handle,
+          text: c.content,
+        })),
+      }));
+
+      setSparks(enriched);
     } catch (err) {
       console.error(err);
     } finally {
@@ -214,9 +241,11 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetchPosts();
-    fetchSparks();
-  }, []);
+    if (currentUser) {
+      fetchPosts();
+      fetchSparks();
+    }
+  }, [currentUser]);
 
   const handleAddNewPost = async (newPost) => {
     try {
@@ -250,11 +279,6 @@ export default function App() {
   };
 
   const handleLikePost = async (post) => {
-    if (!currentUser) {
-      setAuthModalOpen(true);
-      return;
-    }
-
     const isAlreadyLiked = likedPostIds.has(post.id);
     const updatedCount = isAlreadyLiked ? Math.max(0, post.likes - 1) : post.likes + 1;
 
@@ -287,13 +311,7 @@ export default function App() {
     }
   };
 
-  // Toggle bookmark in DB
   const handleToggleBookmark = async (postId) => {
-    if (!currentUser) {
-      setAuthModalOpen(true);
-      return;
-    }
-
     const isBookmarked = bookmarkedPostIds.has(postId);
     setBookmarkedPostIds((prev) => {
       const next = new Set(prev);
@@ -313,40 +331,42 @@ export default function App() {
     }
   };
 
-  const handleAddComment = async (postId, postOwnerHandle, commentText) => {
-    if (!currentUser) {
-      setAuthModalOpen(true);
-      return;
-    }
-
+  const handleAddComment = async (target, commentText) => {
     try {
-      const { data, error } = await supabase.from("comments").insert([
-        { post_id: postId, user_handle: currentHandle, content: commentText }
-      ]).select();
-      if (error) throw error;
+      if (target.type === "post") {
+        const { data, error } = await supabase.from("comments").insert([
+          { post_id: target.item.id, user_handle: currentHandle, content: commentText }
+        ]).select();
+        if (error) throw error;
 
-      const created = { id: data[0].id, user: data[0].user_handle, text: data[0].content };
-      setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, comments: [...p.comments, created] } : p)));
-      setActiveCommentPost((prev) => (prev && prev.id === postId ? { ...prev, comments: [...prev.comments, created] } : prev));
+        const created = { id: data[0].id, user: data[0].user_handle, text: data[0].content };
+        setPosts((prev) => prev.map((p) => (p.id === target.item.id ? { ...p, comments: [...p.comments, created] } : p)));
+        setActiveCommentTarget((prev) => prev ? { ...prev, item: { ...prev.item, comments: [...prev.item.comments, created] } } : null);
 
-      if (postOwnerHandle !== currentHandle) {
-        await supabase.from("notifications").insert([{
-          recipient_handle: postOwnerHandle,
-          sender_handle: currentHandle,
-          type: "comment",
-          post_id: postId,
-        }]);
+        if (target.item.username !== currentHandle) {
+          await supabase.from("notifications").insert([{
+            recipient_handle: target.item.username,
+            sender_handle: currentHandle,
+            type: "comment",
+            post_id: target.item.id,
+          }]);
+        }
+      } else if (target.type === "spark") {
+        const { data, error } = await supabase.from("spark_comments").insert([
+          { spark_id: String(target.item.id), user_handle: currentHandle, content: commentText }
+        ]).select();
+        if (error) throw error;
+
+        const created = { id: data[0].id, user: data[0].user_handle, text: data[0].content };
+        setSparks((prev) => prev.map((s) => (s.id === target.item.id ? { ...s, comments: [...(s.comments || []), created] } : s)));
+        setActiveCommentTarget((prev) => prev ? { ...prev, item: { ...prev.item, comments: [...(prev.item.comments || []), created] } } : null);
       }
     } catch (err) {
-      console.error(err);
+      console.error("Error adding comment:", err);
     }
   };
 
   const handleToggleFollow = async (targetHandle) => {
-    if (!currentUser) {
-      setAuthModalOpen(true);
-      return;
-    }
     const isFollowing = followingHandles.includes(targetHandle);
     if (isFollowing) {
       setFollowingHandles((prev) => prev.filter((h) => h !== targetHandle));
@@ -355,6 +375,28 @@ export default function App() {
       setFollowingHandles((prev) => [...prev, targetHandle]);
       await supabase.from("follows").insert([{ follower_handle: currentHandle, following_handle: targetHandle }]);
       await supabase.from("notifications").insert([{ recipient_handle: targetHandle, sender_handle: currentHandle, type: "follow" }]);
+    }
+  };
+
+  // Open profile of user clicked anywhere
+  const handleOpenUserProfile = async (targetHandle) => {
+    try {
+      const { data } = await supabase.from("profiles").select("*").eq("handle", targetHandle).single();
+      const targetPosts = posts.filter((p) => p.username === targetHandle);
+
+      if (data) {
+        setViewedUserProfile({ ...data, posts: targetPosts });
+      } else {
+        setViewedUserProfile({
+          handle: targetHandle,
+          full_name: targetHandle,
+          avatar_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300",
+          bio: "Social Nest Creator",
+          posts: targetPosts,
+        });
+      }
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -371,52 +413,82 @@ export default function App() {
     return true;
   });
 
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen bg-[#2C2B30] flex items-center justify-center text-[#F58F7C]">
+        <Loader2 size={32} className="animate-spin" />
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <VisitorWelcomeView isDarkMode={isDarkMode} />;
+  }
+
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center pb-24 selection:bg-amber-500 selection:text-black">
+    <div className={`min-h-screen ${isDarkMode ? "bg-[#2C2B30] text-[#D6D6D6]" : "bg-[#FAF7F8] text-[#2C2B30]"} flex flex-col items-center pb-20 transition-colors duration-200`}>
       {/* Top Navbar */}
-      <header className="w-full max-w-md px-4 py-3 flex items-center justify-between border-b border-slate-900 sticky top-0 bg-slate-950/90 backdrop-blur-md z-30">
-        <h1 className="text-xl font-black tracking-wider bg-gradient-to-r from-amber-400 via-orange-400 to-rose-400 bg-clip-text text-transparent cursor-pointer" onClick={() => { setSearchFilterTag(""); setFeedSearchQuery(""); }}>
-          SOCIAL NEST
-        </h1>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setNotificationsOpen(true)} className="relative p-2 text-slate-300 hover:text-white rounded-full transition-colors">
-            <Bell size={19} />
-            {notifications.filter((n) => !n.is_read).length > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-rose-500 rounded-full animate-pulse" />
-            )}
+      <header className={`w-full max-w-md px-4 py-3 flex items-center justify-between border-b ${isDarkMode ? "border-[#4F4F51] bg-[#2C2B30]/90" : "border-[#D6D6D6] bg-white/90"} sticky top-0 backdrop-blur-md z-30`}>
+        <div className="relative">
+          <button
+            onClick={() => setFeedDropdownOpen(!feedDropdownOpen)}
+            className="flex items-center gap-1.5 focus:outline-none"
+          >
+            <h1 className="text-xl font-black tracking-wider bg-gradient-to-r from-[#F58F7C] via-[#F2C4CE] to-[#D6D6D6] bg-clip-text text-transparent">
+              SOCIAL NEST
+            </h1>
+            <ChevronDown size={15} className={`transition-transform text-[#D6D6D6] ${feedDropdownOpen ? "rotate-180 text-[#F58F7C]" : ""}`} />
           </button>
 
-          {currentUser ? (
-            <button onClick={() => setActiveTab("profile")} className="flex items-center gap-1.5 py-1 px-2.5 rounded-full bg-slate-900 border border-slate-800 text-xs text-amber-400 font-semibold">
-              <img src={currentAvatar} className="w-4 h-4 rounded-full object-cover" />
-              @{currentHandle}
-            </button>
-          ) : (
-            <button onClick={() => setAuthModalOpen(true)} className="text-xs font-bold px-3 py-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-black flex items-center gap-1.5 transition-all shadow-md shadow-amber-500/10">
-              <LogIn size={13} /> Sign In
-            </button>
+          {feedDropdownOpen && (
+            <div className={`absolute left-0 mt-2 w-36 rounded-2xl p-1.5 border shadow-2xl z-40 ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-[#D6D6D6]"}`}>
+              <button
+                onClick={() => { setFeedFilter("all"); setFeedDropdownOpen(false); setActiveTab("home"); }}
+                className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold ${feedFilter === "all" ? "text-[#F58F7C] bg-[#F58F7C]/15 font-bold" : isDarkMode ? "text-[#D6D6D6] hover:bg-[#4F4F51]" : "text-slate-700 hover:bg-slate-100"}`}
+              >
+                Explore
+              </button>
+              <button
+                onClick={() => { setFeedFilter("following"); setFeedDropdownOpen(false); setActiveTab("home"); }}
+                className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold ${feedFilter === "following" ? "text-[#F2C4CE] bg-[#F2C4CE]/15 font-bold" : isDarkMode ? "text-[#D6D6D6] hover:bg-[#4F4F51]" : "text-slate-700 hover:bg-slate-100"}`}
+              >
+                Following ({followingHandles.length})
+              </button>
+            </div>
           )}
+        </div>
 
-          <button onClick={() => setActiveTab("messages")} className="relative p-2 text-slate-300 hover:text-white rounded-full transition-colors">
-            <Mail size={19} />
-            {unreadMsgCount > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-amber-500 rounded-full" />
+        {/* Action icons: New Post & Notifications */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsCreateOpen(true)}
+            className="p-1.5 rounded-xl text-[#F58F7C] hover:bg-[#F58F7C]/15 transition-colors"
+            title="Create Post"
+          >
+            <PlusSquare size={21} />
+          </button>
+
+          <button
+            onClick={() => setNotificationsOpen(true)}
+            className={`relative p-1.5 rounded-xl transition-colors ${isDarkMode ? "text-[#D6D6D6] hover:bg-[#4F4F51]" : "text-slate-600 hover:bg-slate-200"}`}
+          >
+            <Bell size={20} />
+            {notifications.filter((n) => !n.is_read).length > 0 && (
+              <span className="absolute top-1 right-1 w-2 h-2 bg-[#F58F7C] rounded-full animate-pulse shadow-sm shadow-[#F58F7C]" />
             )}
           </button>
         </div>
       </header>
 
-      {/* Main Views */}
-      <main className="w-full max-w-md px-3 pt-3">
+      {/* Main Content Area */}
+      <main className="w-full max-w-md px-3 pt-2">
         {activeTab === "home" && (
           <HomeView
+            isDarkMode={isDarkMode}
             stories={SAMPLE_STORIES}
             feedFilter={feedFilter}
-            setFeedFilter={setFeedFilter}
             searchFilterTag={searchFilterTag}
             setSearchFilterTag={setSearchFilterTag}
-            feedSearchQuery={feedSearchQuery}
-            setFeedSearchQuery={setFeedSearchQuery}
             onSelectStory={(idx) => setSelectedStoryIndex(idx)}
             posts={displayedPosts}
             likedPostIds={likedPostIds}
@@ -427,26 +499,54 @@ export default function App() {
             followingHandles={followingHandles}
             onToggleFollow={handleToggleFollow}
             onDeletePost={handleDeletePost}
-            onOpenCreate={() => (!currentUser ? setAuthModalOpen(true) : setIsCreateOpen(true))}
-            onOpenComments={(post) => setActiveCommentPost(post)}
+            onOpenComments={(post) => setActiveCommentTarget({ type: "post", item: post })}
             onLikePost={handleLikePost}
             onToggleBookmark={handleToggleBookmark}
+            onOpenUserProfile={handleOpenUserProfile}
+          />
+        )}
+
+        {activeTab === "search" && (
+          <SearchView
+            isDarkMode={isDarkMode}
+            posts={posts}
+            searchQuery={feedSearchQuery}
+            setSearchQuery={setFeedSearchQuery}
+            searchTag={searchFilterTag}
+            setSearchTag={setSearchFilterTag}
+            onSelectPost={(post) => setActiveCommentTarget({ type: "post", item: post })}
+            onOpenUserProfile={handleOpenUserProfile}
           />
         )}
 
         {activeTab === "sparks" && (
           <div className="flex flex-col items-center gap-3">
             <div className="w-full flex justify-between items-center px-1">
-              <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Trending Sparks</span>
-              <button onClick={() => (!currentUser ? setAuthModalOpen(true) : setIsUploadSparkOpen(true))} className="px-3 py-1 bg-amber-500 text-black rounded-full text-xs font-bold flex items-center gap-1 hover:bg-amber-400 transition-colors">
+              <span className={`text-xs font-semibold uppercase tracking-wider ${isDarkMode ? "text-[#D6D6D6]" : "text-slate-500"}`}>
+                Trending Sparks
+              </span>
+              <button
+                onClick={() => setIsUploadSparkOpen(true)}
+                className="px-3 py-1 bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] rounded-full text-xs font-bold flex items-center gap-1 hover:opacity-90 transition-opacity"
+              >
                 <Video size={13} /> Upload Clip
               </button>
             </div>
-            <div className="w-full h-[76vh] overflow-y-scroll snap-y snap-mandatory rounded-3xl border border-slate-800 bg-black shadow-2xl">
+            <div className="w-full h-[76vh] overflow-y-scroll snap-y snap-mandatory rounded-3xl border border-[#4F4F51] bg-[#2C2B30] shadow-2xl">
               {loadingSparks ? (
-                <div className="h-full flex items-center justify-center text-xs text-slate-500"><Loader2 className="animate-spin mr-2" size={16} /> Loading Sparks...</div>
+                <div className="h-full flex items-center justify-center text-xs text-slate-500">
+                  <Loader2 className="animate-spin mr-2" size={16} /> Loading Sparks...
+                </div>
               ) : (
-                sparks.map((spark) => <SparkCard key={spark.id} spark={spark} heightClass="h-[76vh]" />)
+                sparks.map((spark) => (
+                  <SparkCard
+                    key={spark.id}
+                    spark={spark}
+                    heightClass="h-[76vh]"
+                    onOpenComments={(s) => setActiveCommentTarget({ type: "spark", item: s })}
+                    onOpenUserProfile={handleOpenUserProfile}
+                  />
+                ))
               )}
             </div>
           </div>
@@ -454,6 +554,7 @@ export default function App() {
 
         {activeTab === "messages" && (
           <MessagesView
+            isDarkMode={isDarkMode}
             currentUser={currentUser}
             currentHandle={currentHandle}
             activeChat={activeChat}
@@ -462,12 +563,12 @@ export default function App() {
               setUnreadMsgCount(0);
             }}
             onBack={() => setActiveChat(null)}
-            onOpenAuth={() => setAuthModalOpen(true)}
           />
         )}
 
         {activeTab === "profile" && (
           <ProfileView
+            isDarkMode={isDarkMode}
             user={{
               name: profile?.full_name || "Creator",
               handle: currentHandle,
@@ -480,118 +581,311 @@ export default function App() {
             }}
             posts={posts}
             bookmarkedPostIds={bookmarkedPostIds}
-            currentUser={currentUser}
-            onOpenAuth={() => setAuthModalOpen(true)}
+            onOpenSettings={() => setSettingsOpen(true)}
             onOpenEditProfile={() => setEditProfileOpen(true)}
           />
         )}
       </main>
 
-      {/* Bottom Nav */}
-      <nav className="fixed bottom-0 inset-x-0 bg-slate-950/95 backdrop-blur-xl border-t border-slate-900 px-6 py-2.5 z-40 flex justify-center">
+      {/* Symmetrical 5-Item Bottom Nav */}
+      <nav className={`fixed bottom-0 inset-x-0 backdrop-blur-xl border-t px-4 py-2 z-40 flex justify-center ${isDarkMode ? "bg-[#2C2B30]/95 border-[#4F4F51]" : "bg-white/95 border-[#D6D6D6]"}`}>
         <div className="w-full max-w-md flex items-center justify-around">
-          <button onClick={() => { setActiveTab("home"); setActiveChat(null); }} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === "home" ? "text-amber-400" : "text-slate-500 hover:text-slate-300"}`}>
-            <Home size={22} /><span className="text-[10px] font-medium">Feed</span>
+          <button
+            onClick={() => { setActiveTab("home"); setActiveChat(null); }}
+            className={`flex flex-col items-center gap-1 transition-colors ${activeTab === "home" ? "text-[#F58F7C]" : isDarkMode ? "text-[#D6D6D6]/60 hover:text-[#D6D6D6]" : "text-slate-400 hover:text-slate-600"}`}
+          >
+            <Home size={22} />
+            <span className="text-[10px] font-medium">Feed</span>
           </button>
-          <button onClick={() => { setActiveTab("sparks"); setActiveChat(null); }} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === "sparks" ? "text-amber-400" : "text-slate-500 hover:text-slate-300"}`}>
-            <Zap size={22} className={activeTab === "sparks" ? "fill-amber-400 text-amber-400" : ""} /><span className="text-[10px] font-medium">Sparks</span>
+
+          <button
+            onClick={() => { setActiveTab("search"); setActiveChat(null); }}
+            className={`flex flex-col items-center gap-1 transition-colors ${activeTab === "search" ? "text-[#F58F7C]" : isDarkMode ? "text-[#D6D6D6]/60 hover:text-[#D6D6D6]" : "text-slate-400 hover:text-slate-600"}`}
+          >
+            <Search size={22} />
+            <span className="text-[10px] font-medium">Search</span>
           </button>
-          <button onClick={() => (!currentUser ? setAuthModalOpen(true) : setIsCreateOpen(true))} className="p-2.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-600 text-black font-bold shadow-lg shadow-amber-500/20 active:scale-95 transition-transform">
-            <PlusSquare size={20} />
+
+          <button
+            onClick={() => { setActiveTab("sparks"); setActiveChat(null); }}
+            className={`flex flex-col items-center gap-1 transition-colors ${activeTab === "sparks" ? "text-[#F58F7C]" : isDarkMode ? "text-[#D6D6D6]/60 hover:text-[#D6D6D6]" : "text-slate-400 hover:text-slate-600"}`}
+          >
+            <Zap size={22} className={activeTab === "sparks" ? "fill-[#F58F7C]" : ""} />
+            <span className="text-[10px] font-medium">Sparks</span>
           </button>
-          <button onClick={() => setActiveTab("messages")} className={`relative flex flex-col items-center gap-1 transition-colors ${activeTab === "messages" ? "text-amber-400" : "text-slate-500 hover:text-slate-300"}`}>
-            <Mail size={22} />
-            {unreadMsgCount > 0 && <span className="absolute top-0 right-1 w-2 h-2 bg-amber-500 rounded-full" />}
+
+          <button
+            onClick={() => setActiveTab("messages")}
+            className={`relative flex flex-col items-center gap-1 transition-colors ${activeTab === "messages" ? "text-[#F58F7C]" : isDarkMode ? "text-[#D6D6D6]/60 hover:text-[#D6D6D6]" : "text-slate-400 hover:text-slate-600"}`}
+          >
+            <MessageSquareText size={22} />
+            {unreadMsgCount > 0 && <span className="absolute top-0 right-1 w-2 h-2 bg-[#F58F7C] rounded-full" />}
             <span className="text-[10px] font-medium">Chats</span>
           </button>
-          <button onClick={() => { setActiveTab("profile"); setActiveChat(null); }} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === "profile" ? "text-amber-400" : "text-slate-500 hover:text-slate-300"}`}>
-            <User size={22} /><span className="text-[10px] font-medium">Profile</span>
+
+          <button
+            onClick={() => { setActiveTab("profile"); setActiveChat(null); }}
+            className={`flex flex-col items-center gap-1 transition-colors ${activeTab === "profile" ? "text-[#F58F7C]" : isDarkMode ? "text-[#D6D6D6]/60 hover:text-[#D6D6D6]" : "text-slate-400 hover:text-slate-600"}`}
+          >
+            <User size={22} />
+            <span className="text-[10px] font-medium">Profile</span>
           </button>
         </div>
       </nav>
 
-      {/* Modals */}
-      {authModalOpen && <AuthModal onClose={() => setAuthModalOpen(false)} />}
-      {editProfileOpen && <EditProfileModal currentProfile={profile} onClose={() => setEditProfileOpen(false)} onSave={(up) => { setProfile(p => ({ ...p, ...up })); setEditProfileOpen(false); }} />}
-      {notificationsOpen && <NotificationsDrawer notifications={notifications} onClose={() => setNotificationsOpen(false)} />}
-      {isCreateOpen && <CreatePostModal onClose={() => setIsCreateOpen(false)} onSubmit={handleAddNewPost} />}
-      {isUploadSparkOpen && <UploadSparkModal onClose={() => setIsUploadSparkOpen(false)} onSubmit={() => { fetchSparks(); setIsUploadSparkOpen(false); }} />}
-      {activeCommentPost && (
-        <CommentsDrawer
-          post={activeCommentPost}
-          onClose={() => setActiveCommentPost(null)}
-          onAddComment={(postId, text) => handleAddComment(postId, activeCommentPost.username, text)}
+      {/* Clickable Target User Profile Modal */}
+      {viewedUserProfile && (
+        <UserProfileModal
+          isDarkMode={isDarkMode}
+          profile={viewedUserProfile}
+          isFollowing={followingHandles.includes(viewedUserProfile.handle)}
+          onToggleFollow={() => handleToggleFollow(viewedUserProfile.handle)}
+          onClose={() => setViewedUserProfile(null)}
+          onSelectPost={(post) => {
+            setViewedUserProfile(null);
+            setActiveCommentTarget({ type: "post", item: post });
+          }}
         />
       )}
-      {selectedStoryIndex !== null && <StoryViewerModal stories={SAMPLE_STORIES} initialIndex={selectedStoryIndex} onClose={() => setSelectedStoryIndex(null)} />}
+
+      {/* Settings Modal */}
+      {settingsOpen && (
+        <SettingsModal
+          isDarkMode={isDarkMode}
+          setIsDarkMode={setIsDarkMode}
+          currentProfile={profile}
+          onClose={() => setSettingsOpen(false)}
+          onOpenEditProfile={() => { setSettingsOpen(false); setEditProfileOpen(true); }}
+        />
+      )}
+      {editProfileOpen && (
+        <EditProfileModal
+          isDarkMode={isDarkMode}
+          currentProfile={profile}
+          onClose={() => setEditProfileOpen(false)}
+          onSave={(up) => { setProfile(p => ({ ...p, ...up })); setEditProfileOpen(false); }}
+        />
+      )}
+      {notificationsOpen && (
+        <NotificationsDrawer
+          isDarkMode={isDarkMode}
+          notifications={notifications}
+          onClose={() => setNotificationsOpen(false)}
+          onOpenUserProfile={handleOpenUserProfile}
+        />
+      )}
+      {isCreateOpen && (
+        <CreatePostModal
+          isDarkMode={isDarkMode}
+          onClose={() => setIsCreateOpen(false)}
+          onSubmit={handleAddNewPost}
+        />
+      )}
+      {isUploadSparkOpen && (
+        <UploadSparkModal
+          isDarkMode={isDarkMode}
+          onClose={() => setIsUploadSparkOpen(false)}
+          onSubmit={() => { fetchSparks(); setIsUploadSparkOpen(false); }}
+        />
+      )}
+      {activeCommentTarget && (
+        <CommentsDrawer
+          isDarkMode={isDarkMode}
+          target={activeCommentTarget}
+          onClose={() => setActiveCommentTarget(null)}
+          onAddComment={(text) => handleAddComment(activeCommentTarget, text)}
+          onOpenUserProfile={handleOpenUserProfile}
+        />
+      )}
+      {selectedStoryIndex !== null && (
+        <StoryViewerModal
+          stories={SAMPLE_STORIES}
+          initialIndex={selectedStoryIndex}
+          onClose={() => setSelectedStoryIndex(null)}
+        />
+      )}
     </div>
   );
 }
 
-// --- HOME VIEW ---
+// --- VISITOR SIGN-IN GATEWAY ---
+function VisitorWelcomeView({ isDarkMode }) {
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [handle, setHandle] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setErrorMsg("");
+    try {
+      if (isSignUp) {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              handle: handle.toLowerCase().replace(/[^a-z0-9_]/g, "") || email.split("@")[0],
+              full_name: fullName || "Social Nest User",
+            },
+          },
+        });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      }
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className={`min-h-screen w-full flex flex-col items-center justify-center p-6 ${isDarkMode ? "bg-[#2C2B30] text-[#D6D6D6]" : "bg-[#FAF7F8] text-[#2C2B30]"}`}>
+      <div className="w-full max-w-sm flex flex-col items-center text-center mb-6">
+        <div className="p-3.5 rounded-3xl bg-gradient-to-tr from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] mb-3 shadow-lg shadow-[#F58F7C]/20">
+          <Sparkles size={28} />
+        </div>
+        <h1 className="text-2xl font-black tracking-wider bg-gradient-to-r from-[#F58F7C] via-[#F2C4CE] to-[#D6D6D6] bg-clip-text text-transparent">
+          SOCIAL NEST
+        </h1>
+        <p className="text-xs mt-1.5 text-[#D6D6D6]/80">
+          Connect with creators, share sparks, and chat in real-time.
+        </p>
+      </div>
+
+      <div className={`w-full max-w-sm rounded-3xl p-6 border shadow-2xl ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-[#D6D6D6]"}`}>
+        <h2 className="text-base font-bold mb-1">
+          {isSignUp ? "Create an account" : "Welcome back"}
+        </h2>
+        <p className="text-xs text-[#D6D6D6]/70 mb-5">
+          {isSignUp ? "Sign up to enter your social feed." : "Sign in to enter your social feed."}
+        </p>
+
+        {errorMsg && (
+          <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs rounded-xl">
+            {errorMsg}
+          </div>
+        )}
+
+        <form onSubmit={handleAuthSubmit} className="flex flex-col gap-3">
+          {isSignUp && (
+            <>
+              <div>
+                <label className="text-[11px] font-semibold text-[#D6D6D6]/80 block mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="e.g. Alex Rivera"
+                  className={`w-full rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51] text-white" : "bg-slate-50 border-slate-200 text-slate-900"}`}
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold text-[#D6D6D6]/80 block mb-1">Handle</label>
+                <input
+                  type="text"
+                  required
+                  value={handle}
+                  onChange={(e) => setHandle(e.target.value)}
+                  placeholder="e.g. alex_rivera"
+                  className={`w-full rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51] text-white" : "bg-slate-50 border-slate-200 text-slate-900"}`}
+                />
+              </div>
+            </>
+          )}
+
+          <div>
+            <label className="text-[11px] font-semibold text-[#D6D6D6]/80 block mb-1">Email</label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@domain.com"
+              className={`w-full rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51] text-white" : "bg-slate-50 border-slate-200 text-slate-900"}`}
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-semibold text-[#D6D6D6]/80 block mb-1">Password</label>
+            <input
+              type="password"
+              required
+              minLength={6}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className={`w-full rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51] text-white" : "bg-slate-50 border-slate-200 text-slate-900"}`}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full mt-2 py-2.5 bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold text-xs rounded-xl shadow-md shadow-[#F58F7C]/20 disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {loading && <Loader2 size={14} className="animate-spin" />}
+            {isSignUp ? "Sign Up" : "Sign In"}
+          </button>
+        </form>
+
+        <div className="mt-5 text-center">
+          <button
+            onClick={() => { setIsSignUp(!isSignUp); setErrorMsg(""); }}
+            className="text-xs text-[#D6D6D6]/70 hover:text-[#F58F7C] transition-colors"
+          >
+            {isSignUp ? "Already have an account? Sign in" : "Don't have an account? Sign up"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- HOME FEED VIEW ---
 function HomeView({
+  isDarkMode,
   stories,
   feedFilter,
-  setFeedFilter,
   searchFilterTag,
   setSearchFilterTag,
-  feedSearchQuery,
-  setFeedSearchQuery,
   onSelectStory,
   posts,
   likedPostIds,
   bookmarkedPostIds,
   loading,
-  profileAvatar,
   currentHandle,
   followingHandles,
   onToggleFollow,
   onDeletePost,
-  onOpenCreate,
   onOpenComments,
   onLikePost,
-  onToggleBookmark
+  onToggleBookmark,
+  onOpenUserProfile
 }) {
   return (
     <div className="flex flex-col gap-3">
-      <div className="relative">
-        <Search size={15} className="absolute left-3.5 top-3 text-slate-500" />
-        <input
-          type="text"
-          value={feedSearchQuery}
-          onChange={(e) => setFeedSearchQuery(e.target.value)}
-          placeholder="Search posts or creators..."
-          className="w-full bg-slate-900/60 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500"
-        />
-        {feedSearchQuery && (
-          <button onClick={() => setFeedSearchQuery("")} className="absolute right-3 top-2.5 text-slate-500 hover:text-white">
-            <X size={14} />
-          </button>
-        )}
-      </div>
-
       {searchFilterTag && (
-        <div className="flex items-center justify-between bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 rounded-xl">
-          <span className="text-xs text-amber-400 font-bold flex items-center gap-1">
+        <div className="flex items-center justify-between bg-[#F58F7C]/15 border border-[#F58F7C]/30 px-3 py-1.5 rounded-xl">
+          <span className="text-xs text-[#F58F7C] font-bold flex items-center gap-1">
             <Hash size={13} /> #{searchFilterTag}
           </span>
-          <button onClick={() => setSearchFilterTag("")} className="text-amber-400 hover:text-white">
+          <button onClick={() => setSearchFilterTag("")} className="text-[#F58F7C] hover:text-white">
             <X size={14} />
           </button>
         </div>
       )}
 
-      <div className="flex bg-slate-900/80 p-1 rounded-xl border border-slate-800 text-xs font-semibold">
-        <button onClick={() => setFeedFilter("all")} className={`flex-1 py-1.5 rounded-lg transition-all ${feedFilter === "all" ? "bg-amber-500 text-black font-bold shadow-md shadow-amber-500/20" : "text-slate-400 hover:text-white"}`}>
-          Explore
-        </button>
-        <button onClick={() => setFeedFilter("following")} className={`flex-1 py-1.5 rounded-lg transition-all ${feedFilter === "following" ? "bg-amber-500 text-black font-bold shadow-md shadow-amber-500/20" : "text-slate-400 hover:text-white"}`}>
-          Following ({followingHandles.length})
-        </button>
-      </div>
-
-      {/* Story Tray with Hover & Glow Animation */}
-      <div className="bg-slate-900/60 backdrop-blur-sm p-3.5 rounded-2xl border border-slate-800/80 shadow-lg">
+      {/* Stories Tray */}
+      <div className={`p-3 rounded-2xl border ${isDarkMode ? "border-[#4F4F51] bg-[#2C2B30]/40" : "border-slate-200 bg-white/70"} shadow-sm`}>
         <div className="flex gap-4 overflow-x-auto no-scrollbar">
           {stories.map((story, idx) => {
             const mode = STORY_MODES[story.category];
@@ -601,10 +895,10 @@ function HomeView({
                 onClick={() => onSelectStory(idx)}
                 className="flex flex-col items-center gap-1.5 focus:outline-none flex-shrink-0 group"
               >
-                <div className={`p-[2.5px] rounded-full bg-gradient-to-tr ${mode.color} transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg group-hover:shadow-amber-500/20`}>
-                  <img src={story.userAvatar} className="w-12 h-12 rounded-full object-cover border-2 border-slate-950" />
+                <div className={`p-[2.5px] rounded-full bg-gradient-to-tr ${mode.color} transition-all duration-300 group-hover:scale-105`}>
+                  <img src={story.userAvatar} className={`w-12 h-12 rounded-full object-cover border-2 ${isDarkMode ? "border-[#2C2B30]" : "border-white"}`} />
                 </div>
-                <span className="text-[11px] text-slate-300 truncate max-w-[55px] group-hover:text-amber-400 transition-colors">
+                <span className={`text-[11px] truncate max-w-[55px] ${isDarkMode ? "text-[#D6D6D6] group-hover:text-[#F58F7C]" : "text-slate-700 group-hover:text-[#F58F7C]"}`}>
                   {story.username}
                 </span>
               </button>
@@ -613,30 +907,20 @@ function HomeView({
         </div>
       </div>
 
-      {/* Quick Post Bar */}
-      <div onClick={onOpenCreate} className="bg-slate-900/50 border border-slate-800/80 rounded-2xl p-3.5 flex items-center gap-3 cursor-pointer hover:border-slate-700 transition-colors shadow-sm">
-        <img src={profileAvatar} className="w-8 h-8 rounded-full object-cover border border-slate-800" />
-        <span className="text-xs text-slate-400 flex-1">Share a thought, image, or video...</span>
-        <div className="flex items-center gap-2 text-slate-400">
-          <MessageSquare size={16} />
-          <ImageIcon size={16} />
-          <Video size={16} />
-        </div>
-      </div>
-
-      {/* Posts List */}
-      <div className="flex flex-col gap-3">
+      {/* Posts Feed */}
+      <div className="flex flex-col">
         {loading ? (
           <p className="text-xs text-slate-500 text-center py-8">Loading posts...</p>
         ) : posts.length === 0 ? (
           <div className="text-center py-12 text-slate-500 text-xs">
-            {searchFilterTag ? `No posts found with tag #${searchFilterTag}` : "No posts found matching your search."}
+            {feedFilter === "following" ? "No posts from creators you follow." : "No posts found."}
           </div>
         ) : (
           posts.map((post) => (
             <FeedCard
               key={post.id}
               post={post}
+              isDarkMode={isDarkMode}
               isLiked={likedPostIds.has(post.id)}
               isBookmarked={bookmarkedPostIds.has(post.id)}
               currentHandle={currentHandle}
@@ -647,6 +931,7 @@ function HomeView({
               onLikePost={() => onLikePost(post)}
               onToggleBookmark={() => onToggleBookmark(post.id)}
               onSelectTag={(tag) => setSearchFilterTag(tag)}
+              onOpenUserProfile={() => onOpenUserProfile(post.username)}
             />
           ))
         )}
@@ -655,11 +940,223 @@ function HomeView({
   );
 }
 
-function FormattedPostText({ text, onSelectTag }) {
+// --- GLASS VIDEO PLAYER COMPONENT ---
+function GlassVideoPlayer({ src, isDarkMode }) {
+  const videoRef = useRef(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+  const [progress, setProgress] = useState(0);
+
+  const togglePlay = () => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.pause();
+        setIsPlaying(false);
+      } else {
+        videoRef.current.play();
+        setIsPlaying(true);
+      }
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (videoRef.current && videoRef.current.duration) {
+      setProgress((videoRef.current.currentTime / videoRef.current.duration) * 100);
+    }
+  };
+
+  return (
+    <div className="relative w-full rounded-2xl overflow-hidden group bg-black max-h-96 flex items-center justify-center">
+      <video
+        ref={videoRef}
+        src={src}
+        loop
+        playsInline
+        muted={isMuted}
+        onTimeUpdate={handleTimeUpdate}
+        onClick={togglePlay}
+        className="w-full max-h-96 object-cover cursor-pointer"
+      />
+
+      {/* Glassmorphic Play/Pause Ripple Overlay */}
+      {!isPlaying && (
+        <div
+          onClick={togglePlay}
+          className="absolute inset-0 bg-black/30 backdrop-blur-[2px] flex items-center justify-center cursor-pointer transition-all"
+        >
+          <div className="p-4 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-[#F2C4CE]/40 text-[#F58F7C] shadow-lg shadow-black/40">
+            <Play size={24} className="fill-[#F58F7C] translate-x-0.5" />
+          </div>
+        </div>
+      )}
+
+      {/* Glass Bottom Control Bar */}
+      <div className="absolute bottom-2 inset-x-2 px-3 py-1.5 rounded-xl bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button onClick={togglePlay} className="text-[#F2C4CE] hover:text-[#F58F7C]">
+          {isPlaying ? <Pause size={15} /> : <Play size={15} />}
+        </button>
+
+        {/* Progress Bar */}
+        <div className="flex-1 h-1.5 bg-[#4F4F51] rounded-full overflow-hidden">
+          <div className="h-full bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE]" style={{ width: `${progress}%` }} />
+        </div>
+
+        <button onClick={() => setIsMuted(!isMuted)} className="text-[#D6D6D6] hover:text-white">
+          {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- SEARCH VIEW: MEDIA & USERS SEARCH ---
+function SearchView({ isDarkMode, posts, searchQuery, setSearchQuery, searchTag, setSearchTag, onSelectPost, onOpenUserProfile }) {
+  const [searchMode, setSearchMode] = useState("media"); // 'media' or 'users'
+  const [searchedUsers, setSearchedUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+
+  // Filter media
+  const mediaPosts = posts.filter((p) => p.mediaUrl && p.mediaUrl.trim() !== "");
+  const filteredMedia = mediaPosts.filter((p) => {
+    if (!searchQuery.trim() && !searchTag) return true;
+    const q = searchQuery.toLowerCase();
+    const matchQuery = !q || p.content?.toLowerCase().includes(q) || p.username.toLowerCase().includes(q);
+    const matchTag = !searchTag || p.content?.toLowerCase().includes(`#${searchTag.toLowerCase()}`);
+    return matchQuery && matchTag;
+  });
+
+  // Search profiles directly from DB
+  useEffect(() => {
+    if (searchMode !== "users" || !searchQuery.trim()) {
+      setSearchedUsers([]);
+      return;
+    }
+
+    const searchDBUsers = async () => {
+      setLoadingUsers(true);
+      const clean = searchQuery.trim().toLowerCase().replace("@", "");
+      const { data } = await supabase
+        .from("profiles")
+        .select("handle, full_name, avatar_url, bio")
+        .or(`handle.ilike.%${clean}%,full_name.ilike.%${clean}%`)
+        .limit(10);
+
+      setSearchedUsers(data || []);
+      setLoadingUsers(false);
+    };
+
+    const debounce = setTimeout(searchDBUsers, 250);
+    return () => clearTimeout(debounce);
+  }, [searchQuery, searchMode]);
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Search Toggle (Media vs Creators) */}
+      <div className={`flex p-1 rounded-xl border text-xs font-semibold ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-slate-100 border-[#D6D6D6]"}`}>
+        <button
+          onClick={() => setSearchMode("media")}
+          className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+            searchMode === "media" ? "bg-[#F58F7C] text-[#2C2B30] font-bold" : "text-[#D6D6D6]/70 hover:text-white"
+          }`}
+        >
+          <Film size={14} /> Explore Media
+        </button>
+        <button
+          onClick={() => setSearchMode("users")}
+          className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+            searchMode === "users" ? "bg-[#F58F7C] text-[#2C2B30] font-bold" : "text-[#D6D6D6]/70 hover:text-white"
+          }`}
+        >
+          <Users size={14} /> Find Creators
+        </button>
+      </div>
+
+      <div className="relative">
+        <Search size={16} className={`absolute left-3.5 top-3 ${isDarkMode ? "text-[#D6D6D6]/60" : "text-slate-400"}`} />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder={searchMode === "users" ? "Search creators by handle or name..." : "Search media by #tag or username..."}
+          className={`w-full rounded-2xl pl-10 pr-4 py-2.5 text-xs focus:outline-none focus:border-[#F58F7C] border ${
+            isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-[#D6D6D6]" : "bg-white border-[#D6D6D6] text-[#2C2B30]"
+          }`}
+        />
+        {searchQuery && (
+          <button onClick={() => setSearchQuery("")} className="absolute right-3.5 top-3 text-slate-500 hover:text-white">
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
+      {searchMode === "users" ? (
+        <div className="flex flex-col gap-2 mt-1">
+          {loadingUsers ? (
+            <p className="text-xs text-slate-500 text-center py-10">Searching creators...</p>
+          ) : searchedUsers.length === 0 ? (
+            <p className="text-xs text-slate-500 text-center py-10">
+              {searchQuery.trim() ? "No creator found." : "Type a handle or name to find people."}
+            </p>
+          ) : (
+            searchedUsers.map((u) => (
+              <div
+                key={u.handle}
+                onClick={() => onOpenUserProfile(u.handle)}
+                className={`p-3 rounded-2xl border flex items-center gap-3 cursor-pointer transition-colors ${
+                  isDarkMode ? "bg-[#2C2B30] hover:bg-[#4F4F51]/40 border-[#4F4F51]" : "bg-white hover:bg-slate-100 border-[#D6D6D6]"
+                }`}
+              >
+                <img src={u.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"} className="w-10 h-10 rounded-full object-cover border border-[#F2C4CE]/50" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold truncate text-[#D6D6D6]">{u.full_name || u.handle}</p>
+                  <p className="text-[11px] text-[#F58F7C]">@{u.handle}</p>
+                </div>
+                <button className="px-3 py-1 rounded-xl bg-[#F58F7C]/15 border border-[#F58F7C]/30 text-[#F58F7C] text-xs font-bold">
+                  View
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-1 rounded-2xl overflow-hidden mt-1">
+          {filteredMedia.length === 0 ? (
+            <div className="col-span-3 py-16 text-center text-xs text-slate-500">
+              No media found matching "{searchQuery}".
+            </div>
+          ) : (
+            filteredMedia.map((post) => (
+              <div
+                key={post.id}
+                onClick={() => onSelectPost(post)}
+                className={`aspect-square relative group cursor-pointer overflow-hidden ${isDarkMode ? "bg-[#4F4F51]" : "bg-slate-200"}`}
+              >
+                {post.type === "video" || post.mediaUrl.endsWith(".mp4") ? (
+                  <div className="w-full h-full relative">
+                    <video src={post.mediaUrl} className="w-full h-full object-cover" />
+                    <Video size={13} className="absolute top-1.5 right-1.5 text-white drop-shadow" />
+                  </div>
+                ) : (
+                  <img src={post.mediaUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                )}
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-white text-xs font-bold">
+                  <span className="flex items-center gap-1"><Heart size={12} className="fill-white" /> {post.likes}</span>
+                  <span className="flex items-center gap-1"><MessageCircle size={12} className="fill-white" /> {post.comments?.length || 0}</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FormattedPostText({ text, onSelectTag, isDarkMode }) {
   if (!text) return null;
   const parts = text.split(/(#[a-zA-Z0-9_]+)/g);
   return (
-    <p className="text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-line mb-3">
+    <p className={`text-xs sm:text-sm leading-relaxed whitespace-pre-line mb-3 ${isDarkMode ? "text-[#D6D6D6]" : "text-slate-800"}`}>
       {parts.map((part, i) => {
         if (part.startsWith("#")) {
           const rawTag = part.slice(1);
@@ -667,7 +1164,7 @@ function FormattedPostText({ text, onSelectTag }) {
             <span
               key={i}
               onClick={(e) => { e.stopPropagation(); onSelectTag(rawTag); }}
-              className="text-amber-400 font-bold hover:underline cursor-pointer"
+              className="text-[#F58F7C] font-bold hover:underline cursor-pointer"
             >
               {part}{" "}
             </span>
@@ -679,25 +1176,27 @@ function FormattedPostText({ text, onSelectTag }) {
   );
 }
 
-// --- FEED CARD WITH WORKING BOOKMARK ---
-function FeedCard({ post, isLiked, isBookmarked, currentHandle, isFollowing, onToggleFollow, onDeletePost, onOpenComments, onLikePost, onToggleBookmark, onSelectTag }) {
+// --- CLEAN FEED CARD ---
+function FeedCard({ post, isDarkMode, isLiked, isBookmarked, currentHandle, isFollowing, onToggleFollow, onDeletePost, onOpenComments, onLikePost, onToggleBookmark, onSelectTag, onOpenUserProfile }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const isOwner = post.username === currentHandle;
   const isVideo = post.mediaUrl && (post.mediaUrl.endsWith(".mp4") || post.mediaUrl.endsWith(".webm") || post.mediaUrl.endsWith(".mov") || post.type === "video");
 
   return (
-    <div className="bg-slate-900/50 border border-slate-800/80 rounded-2xl p-4 shadow-sm hover:border-slate-800 transition-all relative">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2.5">
-          <img src={post.userAvatar} className="w-9 h-9 rounded-full object-cover border border-slate-800" />
+    <div className={`py-4 border-b ${isDarkMode ? "border-[#4F4F51]" : "border-slate-200"} relative`}>
+      <div className="flex items-center justify-between mb-2.5">
+        <div className="flex items-center gap-2.5 cursor-pointer" onClick={onOpenUserProfile}>
+          <img src={post.userAvatar} className="w-9 h-9 rounded-full object-cover border border-[#F2C4CE]/40" />
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-200">@{post.username}</span>
+              <span className={`text-xs font-bold hover:underline ${isDarkMode ? "text-[#D6D6D6]" : "text-slate-900"}`}>@{post.username}</span>
               {!isOwner && (
                 <button
-                  onClick={onToggleFollow}
+                  onClick={(e) => { e.stopPropagation(); onToggleFollow(); }}
                   className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-all flex items-center gap-1 ${
-                    isFollowing ? "bg-slate-800 text-slate-400 border border-slate-700" : "bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20"
+                    isFollowing
+                      ? "bg-[#4F4F51] text-[#D6D6D6]"
+                      : "bg-[#F58F7C]/15 text-[#F58F7C] border border-[#F58F7C]/30 hover:bg-[#F58F7C]/25"
                   }`}
                 >
                   {isFollowing ? <UserCheck size={10} /> : <UserPlus size={10} />}
@@ -711,11 +1210,11 @@ function FeedCard({ post, isLiked, isBookmarked, currentHandle, isFollowing, onT
 
         {isOwner && (
           <div className="relative">
-            <button onClick={() => setMenuOpen(!menuOpen)} className="p-1 text-slate-500 hover:text-white rounded-lg">
+            <button onClick={() => setMenuOpen(!menuOpen)} className="p-1 text-[#D6D6D6]/60 hover:text-[#F58F7C] rounded-lg">
               <MoreVertical size={16} />
             </button>
             {menuOpen && (
-              <div className="absolute right-0 top-6 bg-slate-900 border border-slate-800 rounded-xl p-1 shadow-xl z-20 w-28">
+              <div className={`absolute right-0 top-6 rounded-xl p-1 shadow-xl z-20 w-28 border ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-slate-200"}`}>
                 <button onClick={() => { setMenuOpen(false); onDeletePost(); }} className="w-full text-left px-2.5 py-1.5 text-xs text-rose-400 hover:bg-rose-500/10 rounded-lg flex items-center gap-1.5">
                   <Trash2 size={13} /> Delete
                 </button>
@@ -725,87 +1224,157 @@ function FeedCard({ post, isLiked, isBookmarked, currentHandle, isFollowing, onT
         )}
       </div>
 
-      <FormattedPostText text={post.content} onSelectTag={onSelectTag} />
+      <FormattedPostText text={post.content} onSelectTag={onSelectTag} isDarkMode={isDarkMode} />
 
       {post.mediaUrl && (
-        <div className="rounded-xl overflow-hidden mb-3 border border-slate-800 bg-slate-950 flex items-center justify-center max-h-96">
+        <div className="mb-3">
           {isVideo ? (
-            <video src={post.mediaUrl} controls className="w-full max-h-96 object-cover rounded-xl" />
+            <GlassVideoPlayer src={post.mediaUrl} isDarkMode={isDarkMode} />
           ) : (
-            <img src={post.mediaUrl} className="w-full h-full object-cover max-h-96" alt="" />
+            <div className={`rounded-2xl overflow-hidden border ${isDarkMode ? "border-[#4F4F51] bg-black" : "border-slate-200 bg-slate-100"} flex items-center justify-center max-h-96`}>
+              <img src={post.mediaUrl} className="w-full h-full object-cover max-h-96" alt="" />
+            </div>
           )}
         </div>
       )}
 
-      <div className="flex items-center justify-between pt-2 border-t border-slate-800/60 text-slate-400">
-        <button onClick={onLikePost} className={`flex items-center gap-1.5 text-xs transition-colors ${isLiked ? "text-rose-500 font-bold" : "hover:text-rose-400"}`}>
-          <Heart size={16} className={isLiked ? "fill-rose-500" : ""} />
+      <div className={`flex items-center justify-between pt-1 ${isDarkMode ? "text-[#D6D6D6]" : "text-slate-500"}`}>
+        <button onClick={onLikePost} className={`flex items-center gap-1.5 text-xs transition-colors ${isLiked ? "text-[#F58F7C] font-bold" : "hover:text-[#F58F7C]"}`}>
+          <Heart size={18} className={isLiked ? "fill-[#F58F7C]" : ""} />
           <span>{post.likes}</span>
         </button>
 
-        <button onClick={onOpenComments} className="flex items-center gap-1.5 text-xs hover:text-amber-400 transition-colors">
-          <MessageCircle size={16} />
+        <button onClick={onOpenComments} className="flex items-center gap-1.5 text-xs hover:text-[#F2C4CE] transition-colors">
+          <MessageCircle size={18} />
           <span>{post.comments?.length || 0}</span>
         </button>
 
-        {/* Working Bookmark Button */}
-        <button
-          onClick={onToggleBookmark}
-          className={`flex items-center gap-1.5 text-xs transition-colors ${
-            isBookmarked ? "text-amber-400 font-bold" : "hover:text-amber-400"
-          }`}
-        >
-          <Bookmark size={16} className={isBookmarked ? "fill-amber-400" : ""} />
+        <button onClick={onToggleBookmark} className={`flex items-center gap-1.5 text-xs transition-colors ${isBookmarked ? "text-[#F58F7C] font-bold" : "hover:text-[#F58F7C]"}`}>
+          <Bookmark size={18} className={isBookmarked ? "fill-[#F58F7C]" : ""} />
         </button>
 
-        <button className="hover:text-white transition-colors">
-          <Share2 size={16} />
+        <button className="hover:text-[#F58F7C] transition-colors">
+          <Share2 size={18} />
         </button>
       </div>
     </div>
   );
 }
 
-// --- PROFILE VIEW WITH SAVED/BOOKMARKS TAB ---
-function ProfileView({ user, posts, bookmarkedPostIds, currentUser, onOpenAuth, onOpenEditProfile }) {
-  const [profileTab, setProfileTab] = useState("posts"); // 'posts', 'saved', 'sparks'
+// --- USER PROFILE MODAL ---
+function UserProfileModal({ isDarkMode, profile, isFollowing, onToggleFollow, onClose, onSelectPost }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl relative border max-h-[85vh] overflow-y-auto ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-[#D6D6D6]" : "bg-white border-[#D6D6D6] text-[#2C2B30]"}`}>
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X size={20} /></button>
 
+        <div className="flex items-center gap-4">
+          <div className="p-0.5 rounded-full bg-gradient-to-tr from-[#F58F7C] to-[#F2C4CE]">
+            <img src={profile.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300"} className="w-16 h-16 rounded-full object-cover border-2 border-black" />
+          </div>
+          <div>
+            <h3 className="font-bold text-base text-white">{profile.full_name || profile.handle}</h3>
+            <p className="text-xs text-[#F58F7C]">@{profile.handle}</p>
+          </div>
+        </div>
+
+        <p className="text-xs text-[#D6D6D6]/80 mt-3 leading-relaxed">{profile.bio || "Creator on Social Nest"}</p>
+
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={onToggleFollow}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+              isFollowing
+                ? "bg-[#4F4F51] text-[#D6D6D6]"
+                : "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30]"
+            }`}
+          >
+            {isFollowing ? <UserCheck size={14} /> : <UserPlus size={14} />}
+            {isFollowing ? "Following" : "Follow"}
+          </button>
+        </div>
+
+        <div className="border-t border-[#4F4F51] mt-5 pt-3">
+          <span className="text-xs font-bold uppercase tracking-wider block mb-3 text-slate-400">Posts</span>
+          {(!profile.posts || profile.posts.length === 0) ? (
+            <p className="text-xs text-slate-500 py-6 text-center">No posts shared yet.</p>
+          ) : (
+            <div className="grid grid-cols-3 gap-1 rounded-xl overflow-hidden">
+              {profile.posts.map((p) => (
+                <div
+                  key={p.id}
+                  onClick={() => onSelectPost(p)}
+                  className="aspect-square relative group cursor-pointer bg-black/40 overflow-hidden"
+                >
+                  {p.mediaUrl ? (
+                    <img src={p.mediaUrl} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-[10px] p-1 text-center font-bold text-[#F58F7C]">
+                      Aa
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- PROFILE VIEW ---
+function ProfileView({ isDarkMode, user, posts, bookmarkedPostIds, onOpenSettings, onOpenEditProfile }) {
+  const [profileTab, setProfileTab] = useState("posts");
   const savedPosts = posts.filter((p) => bookmarkedPostIds.has(p.id));
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="bg-slate-900/50 border border-slate-800/80 rounded-2xl p-5 shadow-lg">
-        <div className="flex items-center justify-between">
-          <img src={user.avatar} className="w-20 h-20 rounded-full object-cover border-2 border-amber-500 p-0.5" />
+      <div className={`border rounded-2xl p-5 shadow-sm relative ${isDarkMode ? "border-[#4F4F51] bg-[#2C2B30]/40" : "border-slate-200 bg-white"}`}>
+        <button
+          onClick={onOpenSettings}
+          className={`absolute top-4 right-4 p-2 rounded-xl transition-colors border ${
+            isDarkMode ? "border-[#4F4F51] hover:bg-[#4F4F51] text-[#D6D6D6] hover:text-white" : "border-slate-200 hover:bg-slate-100 text-slate-600 hover:text-black"
+          }`}
+          title="Account & App Settings"
+        >
+          <Settings size={18} />
+        </button>
+
+        <div className="flex items-center justify-between pr-10">
+          <div className="p-0.5 rounded-full bg-gradient-to-tr from-[#F58F7C] to-[#F2C4CE]">
+            <img src={user.avatar} className="w-20 h-20 rounded-full object-cover border-2 border-black" />
+          </div>
           <div className="flex gap-6 text-center">
             <div><p className="font-bold text-base">{user.stats.posts}</p><p className="text-[11px] text-slate-400">Posts</p></div>
             <div><p className="font-bold text-base">{user.stats.following}</p><p className="text-[11px] text-slate-400">Following</p></div>
             <div><p className="font-bold text-base">{bookmarkedPostIds.size}</p><p className="text-[11px] text-slate-400">Saved</p></div>
           </div>
         </div>
+
         <div className="mt-4">
-          <h2 className="font-bold text-sm">{user.name}</h2>
-          <p className="text-xs text-amber-400">@{user.handle}</p>
-          <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">{user.bio}</p>
+          <h2 className={`font-bold text-sm ${isDarkMode ? "text-white" : "text-slate-900"}`}>{user.name}</h2>
+          <p className="text-xs text-[#F58F7C] font-semibold">@{user.handle}</p>
+          <p className={`text-xs mt-1.5 leading-relaxed ${isDarkMode ? "text-[#D6D6D6]/80" : "text-slate-600"}`}>{user.bio}</p>
         </div>
+
         <div className="flex gap-2.5 mt-4">
-          {currentUser ? (
-            <>
-              <button onClick={onOpenEditProfile} className="flex-1 bg-white hover:bg-slate-200 text-slate-950 font-semibold text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 transition-colors"><Edit3 size={13} /> Edit Profile</button>
-              <button onClick={() => supabase.auth.signOut()} className="px-3.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-semibold text-xs py-2 rounded-xl flex items-center gap-1.5 transition-colors"><LogOut size={14} /> Log Out</button>
-            </>
-          ) : (
-            <button onClick={onOpenAuth} className="flex-1 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs py-2.5 rounded-xl shadow-lg shadow-amber-500/20 transition-all">Sign In to Your Account</button>
-          )}
+          <button
+            onClick={onOpenEditProfile}
+            className={`flex-1 font-semibold text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 transition-colors border ${
+              isDarkMode ? "bg-[#4F4F51] border-[#4F4F51] text-white hover:bg-[#4F4F51]/80" : "bg-slate-100 border-slate-200 text-slate-800 hover:bg-slate-200"
+            }`}
+          >
+            <Edit3 size={13} /> Edit Profile
+          </button>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-slate-800">
+      <div className={`flex border-b ${isDarkMode ? "border-[#4F4F51]" : "border-slate-200"}`}>
         <button
           onClick={() => setProfileTab("posts")}
           className={`flex-1 py-2.5 flex justify-center items-center gap-2 text-xs font-semibold border-b-2 transition-all ${
-            profileTab === "posts" ? "border-amber-400 text-amber-400" : "border-transparent text-slate-500 hover:text-slate-300"
+            profileTab === "posts" ? "border-[#F58F7C] text-[#F58F7C]" : "border-transparent text-[#D6D6D6]/60 hover:text-white"
           }`}
         >
           <Grid size={16} /> Posts
@@ -813,7 +1382,7 @@ function ProfileView({ user, posts, bookmarkedPostIds, currentUser, onOpenAuth, 
         <button
           onClick={() => setProfileTab("saved")}
           className={`flex-1 py-2.5 flex justify-center items-center gap-2 text-xs font-semibold border-b-2 transition-all ${
-            profileTab === "saved" ? "border-amber-400 text-amber-400" : "border-transparent text-slate-500 hover:text-slate-300"
+            profileTab === "saved" ? "border-[#F2C4CE] text-[#F2C4CE]" : "border-transparent text-[#D6D6D6]/60 hover:text-white"
           }`}
         >
           <Bookmark size={16} /> Saved ({bookmarkedPostIds.size})
@@ -821,39 +1390,31 @@ function ProfileView({ user, posts, bookmarkedPostIds, currentUser, onOpenAuth, 
         <button
           onClick={() => setProfileTab("sparks")}
           className={`flex-1 py-2.5 flex justify-center items-center gap-2 text-xs font-semibold border-b-2 transition-all ${
-            profileTab === "sparks" ? "border-amber-400 text-amber-400" : "border-transparent text-slate-500 hover:text-slate-300"
+            profileTab === "sparks" ? "border-[#F58F7C] text-[#F58F7C]" : "border-transparent text-[#D6D6D6]/60 hover:text-white"
           }`}
         >
           <Film size={16} /> Sparks
         </button>
       </div>
 
-      {/* Tab Panels */}
       {profileTab === "posts" && (
-        <div className="py-8 text-center text-slate-500 text-xs">
-          Your shared posts are displayed directly on the main feed.
-        </div>
+        <div className="py-8 text-center text-slate-500 text-xs">Shared posts are shown directly on the public timeline.</div>
       )}
 
       {profileTab === "saved" && (
         <div className="flex flex-col gap-2.5">
           {savedPosts.length === 0 ? (
-            <div className="text-center py-12 text-slate-500 text-xs">
-              <Bookmark size={28} className="mx-auto mb-2 opacity-30 text-amber-400" />
-              No saved posts yet. Tap the bookmark icon on any post to store it here.
-            </div>
+            <div className="text-center py-12 text-slate-500 text-xs">No saved posts yet.</div>
           ) : (
             savedPosts.map((p) => (
-              <div key={p.id} className="bg-slate-900/60 border border-slate-800/80 p-3 rounded-2xl flex items-center gap-3">
+              <div key={p.id} className={`border p-3 rounded-2xl flex items-center gap-3 ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-slate-200"}`}>
                 {p.mediaUrl ? (
                   <img src={p.mediaUrl} className="w-12 h-12 rounded-xl object-cover" />
                 ) : (
-                  <div className="w-12 h-12 rounded-xl bg-slate-950 flex items-center justify-center text-amber-400 font-bold">
-                    Aa
-                  </div>
+                  <div className="w-12 h-12 rounded-xl bg-[#F58F7C]/15 text-[#F58F7C] font-bold flex items-center justify-center">Aa</div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold text-slate-200 truncate">@{p.username}</p>
+                  <p className={`text-xs font-bold truncate ${isDarkMode ? "text-[#D6D6D6]" : "text-slate-800"}`}>@{p.username}</p>
                   <p className="text-xs text-slate-400 truncate mt-0.5">{p.content || "Media post"}</p>
                 </div>
               </div>
@@ -863,117 +1424,484 @@ function ProfileView({ user, posts, bookmarkedPostIds, currentUser, onOpenAuth, 
       )}
 
       {profileTab === "sparks" && (
-        <div className="py-12 text-center text-slate-500 text-xs">
-          <Zap size={32} className="mx-auto mb-2 opacity-40 text-amber-400" />
-          Clips uploaded are accessible through the public Sparks tab.
-        </div>
+        <div className="py-12 text-center text-slate-500 text-xs">Clips are accessible through the Sparks tab.</div>
       )}
     </div>
   );
 }
 
-// --- STORY VIEWER MODAL WITH ANIMATED TRANSITIONS ---
-function StoryViewerModal({ stories, initialIndex, onClose }) {
-  const [currentIndex, setCurrentIndex] = useState(initialIndex);
-  const [progress, setProgress] = useState(0);
-  const [isPaused, setIsPaused] = useState(false);
-  const activeStory = stories[currentIndex];
-
-  useEffect(() => {
-    if (isPaused) return;
-    const step = 50;
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          if (currentIndex < stories.length - 1) {
-            setCurrentIndex((i) => i + 1);
-            return 0;
-          } else {
-            onClose();
-            return 100;
-          }
-        }
-        return prev + (step / 5000) * 100;
-      });
-    }, step);
-    return () => clearInterval(interval);
-  }, [currentIndex, isPaused]);
+// --- SETTINGS MODAL ---
+function SettingsModal({ isDarkMode, setIsDarkMode, currentProfile, onClose, onOpenEditProfile }) {
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [activityStatus, setActivityStatus] = useState(true);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center animate-in fade-in duration-200">
-      <div
-        className="relative w-full max-w-md h-full sm:h-[85vh] bg-slate-950 sm:rounded-3xl overflow-hidden flex flex-col shadow-2xl transition-transform"
-        onMouseDown={() => setIsPaused(true)}
-        onMouseUp={() => setIsPaused(false)}
-        onTouchStart={() => setIsPaused(true)}
-        onTouchEnd={() => setIsPaused(false)}
-      >
-        {/* Animated Bar Indicators */}
-        <div className="absolute top-3 inset-x-0 z-20 flex gap-1.5 px-3">
-          {stories.map((_, i) => (
-            <div key={i} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-amber-400 rounded-full transition-all duration-75 ease-linear"
-                style={{ width: i === currentIndex ? `${progress}%` : i < currentIndex ? "100%" : "0%" }}
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl relative border ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-[#D6D6D6]" : "bg-white border-slate-200 text-slate-900"}`}>
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+          <X size={20} />
+        </button>
+
+        <h3 className="text-base font-bold mb-5 flex items-center gap-2">
+          <Settings size={18} className="text-[#F58F7C]" /> Settings
+        </h3>
+
+        <div className="flex flex-col gap-4">
+          <div className={`p-3 rounded-2xl border flex items-center justify-between ${isDarkMode ? "bg-black/40 border-[#4F4F51]" : "bg-slate-50 border-slate-200"}`}>
+            <div className="flex items-center gap-2.5">
+              {isDarkMode ? <Moon size={16} className="text-[#F58F7C]" /> : <Sun size={16} className="text-[#F58F7C]" />}
+              <div>
+                <p className="text-xs font-bold">Appearance</p>
+                <p className="text-[10px] text-slate-400">{isDarkMode ? "Dark Night Theme" : "Light Day Theme"}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className={`px-3 py-1 text-xs font-semibold rounded-xl border transition-all ${
+                isDarkMode ? "bg-[#4F4F51] border-[#4F4F51] text-[#F2C4CE]" : "bg-white border-slate-300 text-slate-800"
+              }`}
+            >
+              {isDarkMode ? "Night" : "Day"}
+            </button>
+          </div>
+
+          <div className={`p-3 rounded-2xl border flex items-center justify-between ${isDarkMode ? "bg-black/40 border-[#4F4F51]" : "bg-slate-50 border-slate-200"}`}>
+            <div>
+              <p className="text-xs font-bold">Profile Info</p>
+              <p className="text-[10px] text-slate-400">@{currentProfile?.handle || "user"}</p>
+            </div>
+            <button
+              onClick={onOpenEditProfile}
+              className="text-xs font-bold text-[#F58F7C] hover:underline"
+            >
+              Edit
+            </button>
+          </div>
+
+          <div className={`p-3.5 rounded-2xl border flex flex-col gap-3 ${isDarkMode ? "bg-black/40 border-[#4F4F51]" : "bg-slate-50 border-slate-200"}`}>
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Privacy & Safety</span>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Lock size={15} className="text-slate-400" />
+                <span className="text-xs font-medium">Private Account</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={isPrivate}
+                onChange={() => setIsPrivate(!isPrivate)}
+                className="accent-[#F58F7C] w-4 h-4 cursor-pointer"
               />
             </div>
-          ))}
-        </div>
 
-        {/* Top Header */}
-        <div className="absolute top-6 inset-x-0 z-20 flex items-center justify-between px-4">
-          <div className="flex items-center gap-2">
-            <img src={activeStory.userAvatar} className="w-8 h-8 rounded-full object-cover border border-amber-400/50" />
-            <span className="font-semibold text-sm">{activeStory.username}</span>
-            {isPaused && <span className="text-[10px] bg-black/60 px-2 py-0.5 rounded-full text-amber-400">Paused</span>}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Eye size={15} className="text-slate-400" />
+                <span className="text-xs font-medium">Show Active Status</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={activityStatus}
+                onChange={() => setActivityStatus(!activityStatus)}
+                className="accent-[#F58F7C] w-4 h-4 cursor-pointer"
+              />
+            </div>
           </div>
-          <button onClick={onClose} className="p-1 text-white/80 hover:text-white rounded-full bg-black/30">
-            <X size={20} />
+
+          <button
+            onClick={() => supabase.auth.signOut()}
+            className="w-full py-2.5 rounded-xl border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-bold flex items-center justify-center gap-2 transition-colors mt-2"
+          >
+            <LogOut size={14} /> Log Out
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
 
-        {/* Story Image */}
-        <img
-          key={activeStory.id}
-          src={activeStory.mediaUrl}
-          alt=""
-          className="w-full h-full object-cover select-none animate-in fade-in duration-300"
-        />
-
-        {activeStory.caption && (
-          <div className="absolute bottom-6 inset-x-4 bg-black/60 backdrop-blur-md p-3 rounded-2xl text-xs sm:text-sm border border-white/10">
-            {activeStory.caption}
+// --- NOTIFICATIONS DRAWER WITH CLICKABLE PROFILES ---
+function NotificationsDrawer({ isDarkMode, notifications, onClose, onOpenUserProfile }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex justify-end">
+      <div className={`w-full max-w-sm h-full p-5 flex flex-col shadow-2xl border-l ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-slate-200"}`}>
+        <div className={`flex items-center justify-between pb-4 border-b ${isDarkMode ? "border-[#4F4F51]" : "border-slate-200"}`}>
+          <div className="flex items-center gap-2">
+            <Bell size={18} className="text-[#F58F7C]" />
+            <h3 className={`text-sm font-bold ${isDarkMode ? "text-white" : "text-slate-900"}`}>Notifications</h3>
           </div>
-        )}
+          <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600"><X size={18} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto py-3 flex flex-col gap-2">
+          {notifications.length === 0 ? (
+            <p className="text-xs text-slate-500 text-center py-16">No notifications yet.</p>
+          ) : (
+            notifications.map((n) => (
+              <div
+                key={n.id}
+                onClick={() => { onClose(); onOpenUserProfile(n.sender_handle); }}
+                className={`p-3 rounded-xl flex items-center gap-3 text-xs border cursor-pointer hover:border-[#F58F7C] transition-all ${
+                  isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51]" : "bg-slate-50 border-slate-200"
+                }`}
+              >
+                <div className="p-2 rounded-full bg-[#F58F7C]/15 text-[#F58F7C]">
+                  {n.type === "like" && <Heart size={14} className="fill-[#F58F7C]" />}
+                  {n.type === "comment" && <MessageCircle size={14} />}
+                  {n.type === "follow" && <UserPlus size={14} />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={isDarkMode ? "text-[#D6D6D6]" : "text-slate-800"}>
+                    <span className="font-bold text-[#F58F7C] hover:underline">@{n.sender_handle}</span>{" "}
+                    {n.type === "like" && "liked your post."}
+                    {n.type === "comment" && "commented on your post."}
+                    {n.type === "follow" && "started following you."}
+                  </p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
-        {/* Tap controls */}
-        <div
-          className="absolute left-0 top-16 bottom-0 w-1/3 z-10 cursor-pointer"
-          onClick={() => {
-            if (currentIndex > 0) {
-              setCurrentIndex((i) => i - 1);
-              setProgress(0);
-            }
-          }}
+// --- MESSAGES VIEW ---
+function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, onSelectChat, onBack }) {
+  const [messages, setMessages] = useState([]);
+  const [inputText, setInputText] = useState("");
+  const [loadingChat, setLoadingChat] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [recentConversations, setRecentConversations] = useState([]);
+  const messagesEndRef = useRef(null);
+
+  const getConversationId = (userA, userB) => [userA, userB].sort().join("_");
+
+  const fetchRecentConversations = async () => {
+    if (!currentUser || !currentHandle) return;
+    const { data } = await supabase
+      .from("messages")
+      .select("*")
+      .or(`sender_handle.eq.${currentHandle},recipient_handle.eq.${currentHandle}`)
+      .order("created_at", { ascending: false });
+
+    if (data) {
+      const convMap = new Map();
+      for (const m of data) {
+        const partner = m.sender_handle === currentHandle ? m.recipient_handle : m.sender_handle;
+        if (!convMap.has(partner)) {
+          convMap.set(partner, {
+            userId: partner,
+            username: partner,
+            avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
+            lastMessage: m.content,
+            time: new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            unread: m.recipient_handle === currentHandle && !m.is_read
+          });
+        }
+      }
+      setRecentConversations(Array.from(convMap.values()));
+    }
+  };
+
+  useEffect(() => {
+    fetchRecentConversations();
+  }, [currentUser, currentHandle, activeChat]);
+
+  useEffect(() => {
+    if (!activeChat || !currentUser) return;
+    const convId = getConversationId(currentHandle, activeChat.userId);
+    setLoadingChat(true);
+
+    const loadMessages = async () => {
+      const { data } = await supabase.from("messages").select("*").eq("conversation_id", convId).order("created_at", { ascending: true });
+      if (data) setMessages(data);
+      setLoadingChat(false);
+      await supabase.from("messages").update({ is_read: true }).eq("conversation_id", convId).eq("recipient_handle", currentHandle);
+    };
+
+    loadMessages();
+
+    const channel = supabase
+      .channel(`chat_${convId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${convId}` }, (payload) => {
+        setMessages((prev) => (prev.some((m) => m.id === payload.new.id) ? prev : [...prev, payload.new]));
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, [activeChat, currentUser, currentHandle]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const handleSendSubmit = async (e) => {
+    e.preventDefault();
+    if (!inputText.trim() || !currentUser || !activeChat) return;
+    const text = inputText.trim();
+    setInputText("");
+    const convId = getConversationId(currentHandle, activeChat.userId);
+
+    await supabase.from("messages").insert([
+      { conversation_id: convId, sender_handle: currentHandle, recipient_handle: activeChat.userId, content: text, is_read: false }
+    ]);
+  };
+
+  if (activeChat) {
+    return (
+      <div className={`flex flex-col h-[78vh] rounded-3xl overflow-hidden border shadow-2xl ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-slate-200"}`}>
+        <div className={`px-4 py-3 border-b flex items-center gap-3 ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51]" : "bg-slate-100 border-slate-200"}`}>
+          <button onClick={onBack} className="p-1 text-slate-400 hover:text-white"><ArrowLeft size={18} /></button>
+          <img src={activeChat.avatar} className="w-8 h-8 rounded-full object-cover" />
+          <div className="flex-1 min-w-0">
+            <p className={`text-xs font-bold leading-tight truncate ${isDarkMode ? "text-white" : "text-slate-900"}`}>{activeChat.username}</p>
+            <p className="text-[10px] text-[#F58F7C] font-medium">@{activeChat.userId}</p>
+          </div>
+        </div>
+
+        <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3">
+          {loadingChat ? (
+            <div className="h-full flex items-center justify-center text-xs text-slate-500"><Loader2 size={16} className="animate-spin mr-2" /> Loading...</div>
+          ) : (
+            messages.map((msg) => {
+              const isMe = msg.sender_handle === currentHandle;
+              return (
+                <div key={msg.id} className={`flex flex-col max-w-[75%] ${isMe ? "self-end items-end" : "self-start items-start"}`}>
+                  <div className={`p-3 rounded-2xl text-xs leading-relaxed ${isMe ? "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold rounded-tr-none" : isDarkMode ? "bg-[#4F4F51] text-[#D6D6D6] rounded-tl-none" : "bg-slate-200 text-slate-900 rounded-tl-none"}`}>
+                    {msg.content}
+                  </div>
+                  <span className="text-[9px] text-slate-500 mt-1">{new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                </div>
+              );
+            })
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        <form onSubmit={handleSendSubmit} className={`p-3 border-t flex items-center gap-2 ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-slate-200"}`}>
+          <input
+            type="text"
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            placeholder={`Message @${activeChat.userId}...`}
+            className={`flex-1 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51] text-white" : "bg-slate-100 border-slate-200 text-slate-900"}`}
+          />
+          <button type="submit" disabled={!inputText.trim()} className="p-2 bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] hover:opacity-90 disabled:opacity-40 text-[#2C2B30] font-bold rounded-xl transition-all"><Send size={15} /></button>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="relative">
+        <Search size={16} className={`absolute left-3.5 top-3 ${isDarkMode ? "text-slate-500" : "text-slate-400"}`} />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search by @handle to start a DM..."
+          className={`w-full rounded-2xl pl-10 pr-4 py-2.5 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-[#D6D6D6]" : "bg-white border-slate-200 text-slate-900"}`}
         />
-        <div
-          className="absolute right-0 top-16 bottom-0 w-2/3 z-10 cursor-pointer"
-          onClick={() => {
-            if (currentIndex < stories.length - 1) {
-              setCurrentIndex((i) => i + 1);
-              setProgress(0);
-            } else {
-              onClose();
-            }
-          }}
-        />
+      </div>
+
+      <div className="flex flex-col gap-2 mt-1">
+        <span className="text-[11px] font-semibold text-slate-400 px-1">Recent Chats</span>
+        {recentConversations.length === 0 ? (
+          <div className="text-center py-12 text-xs text-slate-500">No conversations yet.</div>
+        ) : (
+          recentConversations.map((chat) => (
+            <div
+              key={chat.userId}
+              onClick={() => onSelectChat(chat)}
+              className={`p-3.5 rounded-2xl flex items-center gap-3.5 cursor-pointer border transition-all ${
+                isDarkMode ? "bg-[#2C2B30] hover:bg-[#4F4F51]/40 border-[#4F4F51]" : "bg-white hover:bg-slate-100 border-slate-200"
+              }`}
+            >
+              <div className="relative">
+                <img src={chat.avatar} className="w-11 h-11 rounded-full object-cover" />
+                {chat.unread && <span className="absolute top-0 right-0 w-3 h-3 bg-[#F58F7C] rounded-full border-2 border-black" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <p className={`text-xs font-bold truncate ${isDarkMode ? "text-white" : "text-slate-900"}`}>@{chat.userId}</p>
+                  <span className="text-[10px] text-slate-500">{chat.time}</span>
+                </div>
+                <p className={`text-xs truncate mt-0.5 ${chat.unread ? "text-[#F58F7C] font-bold" : "text-slate-400"}`}>
+                  {chat.lastMessage}
+                </p>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// --- SPARK CARD WITH GLASS CONTROLS & COMMENT TRIGGER ---
+function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUserProfile }) {
+  const videoRef = useRef(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+  const [liked, setLiked] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) { videoRef.current?.play().catch(() => {}); setIsPlaying(true); }
+      else { videoRef.current?.pause(); setIsPlaying(false); }
+    }, { threshold: 0.6 });
+    if (videoRef.current) observer.observe(videoRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  const togglePlay = () => {
+    if (videoRef.current) {
+      if (isPlaying) { videoRef.current.pause(); setIsPlaying(false); }
+      else { videoRef.current.play(); setIsPlaying(true); }
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (videoRef.current && videoRef.current.duration) {
+      setProgress((videoRef.current.currentTime / videoRef.current.duration) * 100);
+    }
+  };
+
+  return (
+    <div className={`relative w-full ${heightClass} snap-start bg-black flex items-center justify-center overflow-hidden group`}>
+      <video
+        ref={videoRef}
+        src={spark.video_url}
+        loop
+        playsInline
+        muted={isMuted}
+        onTimeUpdate={handleTimeUpdate}
+        onClick={togglePlay}
+        className="w-full h-full object-cover cursor-pointer"
+      />
+
+      {/* Glass Center Play Ripple */}
+      {!isPlaying && (
+        <div onClick={togglePlay} className="absolute inset-0 bg-black/20 backdrop-blur-[1.5px] flex items-center justify-center cursor-pointer">
+          <div className="p-4 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-[#F2C4CE]/40 text-[#F58F7C]">
+            <Play size={26} className="fill-[#F58F7C] translate-x-0.5" />
+          </div>
+        </div>
+      )}
+
+      {/* Glass Top Audio Pill */}
+      <button
+        onClick={(e) => { e.stopPropagation(); setIsMuted(!isMuted); }}
+        className="absolute top-4 right-4 p-2 bg-[#2C2B30]/60 backdrop-blur-md rounded-full text-[#D6D6D6] hover:text-white z-10 border border-white/10"
+      >
+        {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+      </button>
+
+      {/* Right Social Actions Column */}
+      <div className="absolute right-3 bottom-14 z-10 flex flex-col items-center gap-5">
+        <button onClick={() => setLiked(!liked)} className="flex flex-col items-center gap-1 group/btn">
+          <div className={`p-2.5 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 transition-transform group-hover/btn:scale-110 ${liked ? "text-[#F58F7C]" : "text-white"}`}>
+            <Heart size={22} className={liked ? "fill-[#F58F7C]" : ""} />
+          </div>
+          <span className="text-[11px] font-semibold text-white drop-shadow">{spark.likes_count || 0}</span>
+        </button>
+
+        <button onClick={() => onOpenComments(spark)} className="flex flex-col items-center gap-1 group/btn">
+          <div className="p-2.5 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 text-white transition-transform group-hover/btn:scale-110">
+            <MessageCircle size={22} />
+          </div>
+          <span className="text-[11px] font-semibold text-white drop-shadow">{spark.comments?.length || 0}</span>
+        </button>
+
+        <button className="p-2.5 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 text-white transition-transform hover:scale-110">
+          <Share2 size={22} />
+        </button>
+      </div>
+
+      {/* Caption & Glass Progress Track */}
+      <div className="absolute bottom-4 left-4 right-16 z-10 text-white flex flex-col gap-2 pointer-events-none">
+        <div className="flex items-center gap-2.5 pointer-events-auto cursor-pointer" onClick={() => onOpenUserProfile(spark.user_handle)}>
+          <img src={spark.user_avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"} className="w-8 h-8 rounded-full border border-[#F2C4CE]/50 object-cover" />
+          <span className="font-semibold text-sm hover:underline">@{spark.user_handle}</span>
+        </div>
+        {spark.caption && <p className="text-xs text-[#D6D6D6] line-clamp-2 leading-relaxed">{spark.caption}</p>}
+
+        {/* Glass Scrubber Bar */}
+        <div className="w-full h-1 bg-[#4F4F51]/70 backdrop-blur-md rounded-full overflow-hidden mt-1">
+          <div className="h-full bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE]" style={{ width: `${progress}%` }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- UNIVERSAL COMMENTS DRAWER (POSTS & SPARKS) ---
+function CommentsDrawer({ isDarkMode, target, onClose, onAddComment, onOpenUserProfile }) {
+  const [commentInput, setCommentInput] = useState("");
+  const comments = target?.item?.comments || [];
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!commentInput.trim()) return;
+    onAddComment(commentInput.trim());
+    setCommentInput("");
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col justify-end p-0 sm:p-4">
+      <div className={`w-full max-w-md mx-auto h-[65vh] rounded-t-3xl sm:rounded-3xl flex flex-col overflow-hidden shadow-2xl border ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-slate-200"}`}>
+        <div className={`px-4 py-3 border-b flex items-center justify-between ${isDarkMode ? "border-[#4F4F51]" : "border-slate-200"}`}>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-[#D6D6D6]">
+            Comments ({target.type === "spark" ? "Sparks" : "Post"})
+          </h3>
+          <button onClick={onClose} className="p-1 text-slate-400 hover:text-white"><X size={18} /></button>
+        </div>
+
+        <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3">
+          {comments.length === 0 ? (
+            <p className="text-xs text-slate-500 text-center py-12">No comments yet. Start the conversation!</p>
+          ) : (
+            comments.map((c) => (
+              <div key={c.id} className="flex gap-2.5 items-start">
+                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#F58F7C] to-[#F2C4CE] flex items-center justify-center text-[10px] font-bold text-[#2C2B30] flex-shrink-0">
+                  {c.user.charAt(0).toUpperCase()}
+                </div>
+                <div className={`flex-1 p-2.5 rounded-xl border ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51]" : "bg-slate-100 border-slate-200"}`}>
+                  <p
+                    onClick={() => onOpenUserProfile(c.user)}
+                    className="text-[11px] font-bold text-[#F58F7C] cursor-pointer hover:underline inline-block"
+                  >
+                    @{c.user}
+                  </p>
+                  <p className={`text-xs mt-0.5 ${isDarkMode ? "text-[#D6D6D6]" : "text-slate-800"}`}>{c.text}</p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <form onSubmit={handleSubmit} className={`p-3 border-t flex gap-2 ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-slate-200"}`}>
+          <input
+            type="text"
+            value={commentInput}
+            onChange={(e) => setCommentInput(e.target.value)}
+            placeholder="Add a comment..."
+            className={`flex-1 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51] text-white" : "bg-slate-100 border-slate-200 text-slate-900"}`}
+          />
+          <button type="submit" disabled={!commentInput.trim()} className="p-2 bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold rounded-xl disabled:opacity-40">
+            <Send size={14} />
+          </button>
+        </form>
       </div>
     </div>
   );
 }
 
 // --- CREATE POST MODAL ---
-function CreatePostModal({ onClose, onSubmit }) {
+function CreatePostModal({ isDarkMode, onClose, onSubmit }) {
   const [postType, setPostType] = useState("text");
   const [content, setContent] = useState("");
   const [selectedFile, setSelectedFile] = useState(null);
@@ -1021,32 +1949,29 @@ function CreatePostModal({ onClose, onSubmit }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl relative">
-        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white">
-          <X size={20} />
-        </button>
-
-        <h3 className="text-base font-bold text-white mb-4">Create a Post</h3>
+      <div className={`w-full max-w-md rounded-3xl p-5 shadow-2xl relative border ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-white" : "bg-white border-slate-200 text-slate-900"}`}>
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+        <h3 className="text-base font-bold mb-4">Create a Post</h3>
 
         <div className="flex gap-2 mb-4">
           <button
             type="button"
             onClick={() => { setPostType("text"); setSelectedFile(null); setPreviewUrl(null); }}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${postType === "text" ? "bg-white text-slate-950" : "bg-slate-800 text-slate-400"}`}
+            className={`flex-1 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${postType === "text" ? "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold" : isDarkMode ? "bg-[#4F4F51] text-[#D6D6D6]" : "bg-slate-100 text-slate-600"}`}
           >
             <MessageSquare size={13} /> Text
           </button>
           <button
             type="button"
             onClick={() => { setPostType("photo"); setSelectedFile(null); setPreviewUrl(null); }}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${postType === "photo" ? "bg-white text-slate-950" : "bg-slate-800 text-slate-400"}`}
+            className={`flex-1 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${postType === "photo" ? "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold" : isDarkMode ? "bg-[#4F4F51] text-[#D6D6D6]" : "bg-slate-100 text-slate-600"}`}
           >
             <ImageIcon size={13} /> Photo
           </button>
           <button
             type="button"
             onClick={() => { setPostType("video"); setSelectedFile(null); setPreviewUrl(null); }}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${postType === "video" ? "bg-white text-slate-950" : "bg-slate-800 text-slate-400"}`}
+            className={`flex-1 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${postType === "video" ? "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold" : isDarkMode ? "bg-[#4F4F51] text-[#D6D6D6]" : "bg-slate-100 text-slate-600"}`}
           >
             <Video size={13} /> Video
           </button>
@@ -1058,38 +1983,21 @@ function CreatePostModal({ onClose, onSubmit }) {
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder="What's happening? Type #hashtags to categorize..."
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500 resize-none"
+            className={`w-full rounded-xl p-3 text-xs sm:text-sm focus:outline-none focus:border-[#F58F7C] resize-none border ${isDarkMode ? "bg-black/40 border-[#4F4F51] text-white" : "bg-slate-50 border-slate-200 text-slate-900"}`}
           />
 
           {postType !== "text" && (
             <div>
-              <input
-                type="file"
-                accept={postType === "video" ? "video/*" : "image/*"}
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                className="hidden"
-              />
+              <input type="file" accept={postType === "video" ? "video/*" : "image/*"} ref={fileInputRef} onChange={handleFileChange} className="hidden" />
               {!previewUrl ? (
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-slate-800 hover:border-amber-500/50 rounded-xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors bg-slate-950/50"
-                >
+                <div onClick={() => fileInputRef.current?.click()} className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer ${isDarkMode ? "border-[#4F4F51] hover:border-[#F58F7C] bg-black/40" : "border-slate-300 hover:border-[#F58F7C] bg-slate-50"}`}>
                   <UploadCloud size={26} className="text-slate-500" />
-                  <span className="text-xs text-slate-400 font-medium">
-                    Click to select {postType === "video" ? "video clip (.mp4, .mov)" : "an image"}
-                  </span>
+                  <span className="text-xs text-slate-400">Click to select {postType === "video" ? "video (.mp4)" : "photo"}</span>
                 </div>
               ) : (
-                <div className="relative rounded-xl overflow-hidden border border-slate-800 max-h-48 bg-slate-950 flex items-center justify-center">
-                  {postType === "video" ? (
-                    <video src={previewUrl} className="w-full h-full object-cover max-h-48" autoPlay muted loop />
-                  ) : (
-                    <img src={previewUrl} alt="Preview" className="w-full h-full object-cover max-h-48" />
-                  )}
-                  <button type="button" onClick={() => { setSelectedFile(null); setPreviewUrl(null); }} className="absolute top-2 right-2 p-1.5 bg-black/70 text-white rounded-full">
-                    <X size={14} />
-                  </button>
+                <div className="relative rounded-xl overflow-hidden border max-h-48 flex items-center justify-center">
+                  {postType === "video" ? <video src={previewUrl} className="w-full h-full object-cover max-h-48" autoPlay muted loop /> : <img src={previewUrl} className="w-full h-full object-cover max-h-48" />}
+                  <button type="button" onClick={() => { setSelectedFile(null); setPreviewUrl(null); }} className="absolute top-2 right-2 p-1.5 bg-black/70 text-white rounded-full"><X size={14} /></button>
                 </div>
               )}
             </div>
@@ -1097,11 +2005,7 @@ function CreatePostModal({ onClose, onSubmit }) {
 
           <div className="flex items-center justify-between pt-2">
             <span className="text-[11px] text-slate-500">{content.length}/280 chars</span>
-            <button
-              type="submit"
-              disabled={isUploading || (!content.trim() && !selectedFile)}
-              className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black text-xs font-bold flex items-center gap-1.5 shadow-md shadow-amber-500/20"
-            >
+            <button type="submit" disabled={isUploading || (!content.trim() && !selectedFile)} className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] text-xs font-bold flex items-center gap-1.5">
               {isUploading ? <><Loader2 size={13} className="animate-spin" /> Posting...</> : <><Send size={13} /> Post</>}
             </button>
           </div>
@@ -1111,216 +2015,8 @@ function CreatePostModal({ onClose, onSubmit }) {
   );
 }
 
-// --- MESSAGES VIEW ---
-function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, onBack, onOpenAuth }) {
-  const [messages, setMessages] = useState([]);
-  const [inputText, setInputText] = useState("");
-  const [loadingChat, setLoadingChat] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
-  const [recentConversations, setRecentConversations] = useState([]);
-  const messagesEndRef = useRef(null);
-
-  const getConversationId = (userA, userB) => [userA, userB].sort().join("_");
-
-  const fetchRecentConversations = async () => {
-    if (!currentUser || !currentHandle) return;
-    const { data } = await supabase
-      .from("messages")
-      .select("*")
-      .or(`sender_handle.eq.${currentHandle},recipient_handle.eq.${currentHandle}`)
-      .order("created_at", { ascending: false });
-
-    if (data) {
-      const convMap = new Map();
-      for (const m of data) {
-        const partner = m.sender_handle === currentHandle ? m.recipient_handle : m.sender_handle;
-        if (!convMap.has(partner)) {
-          convMap.set(partner, {
-            userId: partner,
-            username: partner,
-            avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
-            lastMessage: m.content,
-            time: new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-            unread: m.recipient_handle === currentHandle && !m.is_read
-          });
-        }
-      }
-      setRecentConversations(Array.from(convMap.values()));
-    }
-  };
-
-  useEffect(() => {
-    fetchRecentConversations();
-  }, [currentUser, currentHandle, activeChat]);
-
-  useEffect(() => {
-    if (!activeChat || !currentUser) return;
-    const convId = getConversationId(currentHandle, activeChat.userId);
-    setLoadingChat(true);
-
-    const loadMessages = async () => {
-      const { data } = await supabase.from("messages").select("*").eq("conversation_id", convId).order("created_at", { ascending: true });
-      if (data) setMessages(data);
-      setLoadingChat(false);
-
-      await supabase.from("messages").update({ is_read: true }).eq("conversation_id", convId).eq("recipient_handle", currentHandle);
-    };
-
-    loadMessages();
-
-    const channel = supabase
-      .channel(`chat_${convId}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${convId}` }, (payload) => {
-        setMessages((prev) => (prev.some((m) => m.id === payload.new.id) ? prev : [...prev, payload.new]));
-      })
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
-  }, [activeChat, currentUser, currentHandle]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  const handleSendSubmit = async (e) => {
-    e.preventDefault();
-    if (!inputText.trim() || !currentUser || !activeChat) return;
-    const text = inputText.trim();
-    setInputText("");
-    const convId = getConversationId(currentHandle, activeChat.userId);
-
-    await supabase.from("messages").insert([
-      { conversation_id: convId, sender_handle: currentHandle, recipient_handle: activeChat.userId, content: text, is_read: false }
-    ]);
-  };
-
-  if (!currentUser) {
-    return (
-      <div className="py-20 text-center flex flex-col items-center gap-3">
-        <Mail size={36} className="text-amber-400 opacity-60" />
-        <h3 className="text-sm font-bold">Sign In to Send Messages</h3>
-        <button onClick={onOpenAuth} className="mt-2 px-5 py-2 bg-amber-500 text-black font-bold text-xs rounded-xl">Sign In</button>
-      </div>
-    );
-  }
-
-  if (activeChat) {
-    return (
-      <div className="flex flex-col h-[78vh] bg-slate-900/40 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
-        <div className="px-4 py-3 bg-slate-900/90 border-b border-slate-800 flex items-center gap-3">
-          <button onClick={onBack} className="p-1 text-slate-400 hover:text-white"><ArrowLeft size={18} /></button>
-          <img src={activeChat.avatar} className="w-8 h-8 rounded-full object-cover border border-slate-800" />
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold leading-tight truncate">{activeChat.username}</p>
-            <p className="text-[10px] text-amber-400 font-medium">@{activeChat.userId}</p>
-          </div>
-        </div>
-
-        <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3">
-          {loadingChat ? (
-            <div className="h-full flex items-center justify-center text-xs text-slate-500"><Loader2 size={16} className="animate-spin mr-2" /> Loading...</div>
-          ) : (
-            messages.map((msg) => {
-              const isMe = msg.sender_handle === currentHandle;
-              return (
-                <div key={msg.id} className={`flex flex-col max-w-[75%] ${isMe ? "self-end items-end" : "self-start items-start"}`}>
-                  <div className={`p-3 rounded-2xl text-xs leading-relaxed ${isMe ? "bg-gradient-to-r from-amber-500 to-orange-500 text-black font-medium rounded-tr-none" : "bg-slate-800 text-white rounded-tl-none border border-slate-700/60"}`}>
-                    {msg.content}
-                  </div>
-                  <span className="text-[9px] text-slate-500 mt-1">{new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                </div>
-              );
-            })
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        <form onSubmit={handleSendSubmit} className="p-3 bg-slate-950/80 border-t border-slate-800 flex items-center gap-2">
-          <input type="text" value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder={`Message @${activeChat.userId}...`} className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500" />
-          <button type="submit" disabled={!inputText.trim()} className="p-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black rounded-xl transition-all"><Send size={15} /></button>
-        </form>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="relative">
-        <Search size={16} className="absolute left-3.5 top-3 text-slate-500" />
-        <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search by @handle to start a DM..." className="w-full bg-slate-900/60 border border-slate-800 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500" />
-      </div>
-
-      <div className="flex flex-col gap-2 mt-1">
-        <span className="text-[11px] font-semibold text-slate-400 px-1">Recent Chats</span>
-        {recentConversations.length === 0 ? (
-          <div className="text-center py-12 text-xs text-slate-500">No conversations yet. Type a handle above to chat!</div>
-        ) : (
-          recentConversations.map((chat) => (
-            <div key={chat.userId} onClick={() => onSelectChat(chat)} className="bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800/70 p-3.5 rounded-2xl flex items-center gap-3.5 cursor-pointer transition-all">
-              <div className="relative">
-                <img src={chat.avatar} className="w-11 h-11 rounded-full object-cover border border-slate-800" />
-                {chat.unread && <span className="absolute top-0 right-0 w-3 h-3 bg-amber-500 border-2 border-slate-950 rounded-full" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-bold text-white truncate">@{chat.userId}</p>
-                  <span className="text-[10px] text-slate-500">{chat.time}</span>
-                </div>
-                <p className={`text-xs truncate mt-0.5 ${chat.unread ? "text-amber-400 font-bold" : "text-slate-400"}`}>
-                  {chat.lastMessage}
-                </p>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
-// --- NOTIFICATIONS DRAWER ---
-function NotificationsDrawer({ notifications, onClose }) {
-  return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex justify-end">
-      <div className="w-full max-w-sm h-full bg-slate-900 border-l border-slate-800 p-5 flex flex-col shadow-2xl">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-          <div className="flex items-center gap-2">
-            <Bell size={18} className="text-amber-400" />
-            <h3 className="text-sm font-bold text-white">Notifications</h3>
-          </div>
-          <button onClick={onClose} className="p-1 text-slate-400 hover:text-white"><X size={18} /></button>
-        </div>
-        <div className="flex-1 overflow-y-auto py-3 flex flex-col gap-2">
-          {notifications.length === 0 ? (
-            <p className="text-xs text-slate-500 text-center py-16">No notifications yet.</p>
-          ) : (
-            notifications.map((n) => (
-              <div key={n.id} className="p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl flex items-center gap-3 text-xs">
-                <div className="p-2 rounded-full bg-amber-500/10 text-amber-400">
-                  {n.type === "like" && <Heart size={14} className="fill-amber-400" />}
-                  {n.type === "comment" && <MessageCircle size={14} />}
-                  {n.type === "follow" && <UserPlus size={14} />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-slate-200">
-                    <span className="font-bold text-amber-400">@{n.sender_handle}</span>{" "}
-                    {n.type === "like" && "liked your post."}
-                    {n.type === "comment" && "commented on your post."}
-                    {n.type === "follow" && "started following you."}
-                  </p>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // --- EDIT PROFILE MODAL ---
-function EditProfileModal({ currentProfile, onClose, onSave }) {
+function EditProfileModal({ isDarkMode, currentProfile, onClose, onSave }) {
   const [fullName, setFullName] = useState(currentProfile?.full_name || "");
   const [bio, setBio] = useState(currentProfile?.bio || "");
   const [avatarUrl, setAvatarUrl] = useState(currentProfile?.avatar_url || "");
@@ -1347,13 +2043,15 @@ function EditProfileModal({ currentProfile, onClose, onSave }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative">
-        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X size={20} /></button>
-        <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2"><Edit3 size={16} className="text-amber-400" /> Edit Profile</h3>
+      <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl relative border ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-white" : "bg-white border-slate-200 text-slate-900"}`}>
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+        <h3 className="text-base font-bold mb-4 flex items-center gap-2"><Edit3 size={16} className="text-[#F58F7C]" /> Edit Profile</h3>
         <form onSubmit={(e) => { e.preventDefault(); onSave({ full_name: fullName.trim(), bio: bio.trim(), avatar_url: avatarUrl }); }} className="flex flex-col gap-4">
           <div className="flex flex-col items-center gap-2">
             <div className="relative group cursor-pointer" onClick={() => avatarInputRef.current?.click()}>
-              <img src={avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300"} className="w-20 h-20 rounded-full object-cover border-2 border-amber-500" />
+              <div className="p-0.5 rounded-full bg-gradient-to-tr from-[#F58F7C] to-[#F2C4CE]">
+                <img src={avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300"} className="w-20 h-20 rounded-full object-cover border-2 border-black" />
+              </div>
               <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Camera size={20} className="text-white" /></div>
             </div>
             <input type="file" accept="image/*" ref={avatarInputRef} onChange={handleAvatarFileChange} className="hidden" />
@@ -1361,13 +2059,13 @@ function EditProfileModal({ currentProfile, onClose, onSave }) {
           </div>
           <div>
             <label className="text-[11px] font-semibold text-slate-400 block mb-1">Full Name</label>
-            <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500" />
+            <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className={`w-full rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-black/40 border-[#4F4F51] text-white" : "bg-slate-50 border-slate-200 text-slate-900"}`} />
           </div>
           <div>
             <label className="text-[11px] font-semibold text-slate-400 block mb-1">Bio</label>
-            <textarea rows={3} value={bio} onChange={(e) => setBio(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-amber-500 resize-none" />
+            <textarea rows={3} value={bio} onChange={(e) => setBio(e.target.value)} className={`w-full rounded-xl p-3 text-xs focus:outline-none focus:border-[#F58F7C] resize-none border ${isDarkMode ? "bg-black/40 border-[#4F4F51] text-white" : "bg-slate-50 border-slate-200 text-slate-900"}`} />
           </div>
-          <button type="submit" disabled={uploading} className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-black font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 active:scale-95 transition-all">
+          <button type="submit" disabled={uploading} className="w-full py-2.5 bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] font-bold text-xs rounded-xl shadow-sm">
             Save Profile
           </button>
         </form>
@@ -1376,47 +2074,8 @@ function EditProfileModal({ currentProfile, onClose, onSave }) {
   );
 }
 
-// --- SPARK CARD ---
-function SparkCard({ spark, heightClass = "h-[580px]" }) {
-  const videoRef = useRef(null);
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [isMuted, setIsMuted] = useState(true);
-  const [liked, setLiked] = useState(false);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) { videoRef.current?.play().catch(() => {}); setIsPlaying(true); }
-      else { videoRef.current?.pause(); setIsPlaying(false); }
-    }, { threshold: 0.6 });
-    if (videoRef.current) observer.observe(videoRef.current);
-    return () => observer.disconnect();
-  }, []);
-
-  return (
-    <div className={`relative w-full ${heightClass} snap-start bg-slate-950 flex items-center justify-center overflow-hidden`}>
-      <video ref={videoRef} src={spark.video_url} loop playsInline muted={isMuted} onClick={() => { if (isPlaying) { videoRef.current.pause(); setIsPlaying(false); } else { videoRef.current.play(); setIsPlaying(true); } }} className="w-full h-full object-cover cursor-pointer" />
-      <button onClick={(e) => { e.stopPropagation(); setIsMuted(!isMuted); }} className="absolute top-4 right-4 p-2 bg-black/50 backdrop-blur-md rounded-full text-white/90 hover:text-white z-10">{isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}</button>
-      <div className="absolute right-3 bottom-12 z-10 flex flex-col items-center gap-5">
-        <button onClick={() => setLiked(!liked)} className="flex flex-col items-center gap-1 group">
-          <div className={`p-2.5 rounded-full bg-black/40 backdrop-blur-md transition-transform group-hover:scale-110 ${liked ? "text-rose-500" : "text-white"}`}><Heart size={22} className={liked ? "fill-rose-500" : ""} /></div>
-          <span className="text-[11px] font-semibold text-white/90">{spark.likes_count || 0}</span>
-        </button>
-        <button className="p-2.5 rounded-full bg-black/40 backdrop-blur-md text-white"><MessageCircle size={22} /></button>
-        <button className="p-2.5 rounded-full bg-black/40 backdrop-blur-md text-white"><Share2 size={22} /></button>
-      </div>
-      <div className="absolute bottom-4 left-4 right-16 z-10 text-white flex flex-col gap-1.5 pointer-events-none">
-        <div className="flex items-center gap-2.5">
-          <img src={spark.user_avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"} className="w-8 h-8 rounded-full border border-white/40 object-cover" />
-          <span className="font-semibold text-sm">@{spark.user_handle}</span>
-        </div>
-        {spark.caption && <p className="text-xs text-slate-200 line-clamp-2 leading-relaxed">{spark.caption}</p>}
-      </div>
-    </div>
-  );
-}
-
 // --- UPLOAD SPARK MODAL ---
-function UploadSparkModal({ onClose, onSubmit }) {
+function UploadSparkModal({ isDarkMode, onClose, onSubmit }) {
   const [caption, setCaption] = useState("");
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
@@ -1449,24 +2108,24 @@ function UploadSparkModal({ onClose, onSubmit }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl relative">
-        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X size={20} /></button>
-        <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2"><Zap className="fill-amber-400 text-amber-400" size={18} /> Upload Spark Clip</h3>
+      <div className={`w-full max-w-md rounded-2xl p-5 shadow-2xl relative border ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-white" : "bg-white border-slate-200 text-slate-900"}`}>
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+        <h3 className="text-base font-bold mb-4 flex items-center gap-2"><Zap className="fill-[#F58F7C] text-[#F58F7C]" size={18} /> Upload Spark Clip</h3>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <input type="file" accept="video/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
           {!previewUrl ? (
-            <div onClick={() => fileInputRef.current?.click()} className="border-2 border-dashed border-slate-800 hover:border-amber-500/50 rounded-xl p-8 flex flex-col items-center justify-center gap-2 cursor-pointer bg-slate-950/50">
+            <div onClick={() => fileInputRef.current?.click()} className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center gap-2 cursor-pointer ${isDarkMode ? "border-[#4F4F51] hover:border-[#F58F7C] bg-black/40" : "border-slate-300 hover:border-[#F58F7C] bg-slate-50"}`}>
               <UploadCloud size={32} className="text-slate-500" />
-              <span className="text-xs text-slate-400">Select short video (.mp4, .mov, .webm)</span>
+              <span className="text-xs text-slate-400">Select short video (.mp4, .mov)</span>
             </div>
           ) : (
-            <div className="relative rounded-xl overflow-hidden border border-slate-800 h-44 bg-slate-950 flex items-center justify-center">
+            <div className="relative rounded-xl overflow-hidden border h-44 flex items-center justify-center">
               <video src={previewUrl} className="w-full h-full object-cover" muted loop autoPlay />
               <button type="button" onClick={() => { setSelectedFile(null); setPreviewUrl(null); }} className="absolute top-2 right-2 p-1.5 bg-black/70 text-white rounded-full"><X size={14} /></button>
             </div>
           )}
-          <input type="text" value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Add caption and #hashtags..." className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-amber-500" />
-          <button type="submit" disabled={isUploading || !selectedFile} className="px-5 py-2 rounded-xl bg-amber-500 text-black text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50">
+          <input type="text" value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Add caption and #hashtags..." className={`w-full rounded-xl p-2.5 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-black/40 border-[#4F4F51] text-white" : "bg-slate-50 border-slate-200 text-slate-900"}`} />
+          <button type="submit" disabled={isUploading || !selectedFile} className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50">
             {isUploading ? <><Loader2 size={13} className="animate-spin" /> Uploading...</> : <><Video size={13} /> Publish Spark</>}
           </button>
         </form>
@@ -1475,117 +2134,70 @@ function UploadSparkModal({ onClose, onSubmit }) {
   );
 }
 
-// --- COMMENTS DRAWER ---
-function CommentsDrawer({ post, onClose, onAddComment }) {
-  const [commentInput, setCommentInput] = useState("");
-  return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col justify-end p-0 sm:p-4">
-      <div className="w-full max-w-md mx-auto h-[65vh] bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl flex flex-col overflow-hidden shadow-2xl">
-        <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Comments</h3>
-          <button onClick={onClose} className="p-1 text-slate-400 hover:text-white"><X size={18} /></button>
-        </div>
-        <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3">
-          {post.comments?.length === 0 ? (
-            <p className="text-xs text-slate-500 text-center py-10">No comments yet. Start the conversation!</p>
-          ) : (
-            post.comments.map((c) => (
-              <div key={c.id} className="flex gap-2.5 items-start">
-                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-500 to-rose-500 flex items-center justify-center text-[10px] font-bold text-black flex-shrink-0">
-                  {c.user.charAt(0).toUpperCase()}
-                </div>
-                <div className="flex-1 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                  <p className="text-[11px] font-bold text-amber-400">@{c.user}</p>
-                  <p className="text-xs text-slate-200 mt-0.5">{c.text}</p>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-        <form onSubmit={(e) => { e.preventDefault(); if (!commentInput.trim()) return; onAddComment(post.id, commentInput.trim()); setCommentInput(""); }} className="p-3 bg-slate-950 border-t border-slate-800 flex gap-2">
-          <input type="text" value={commentInput} onChange={(e) => setCommentInput(e.target.value)} placeholder="Add a comment..." className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500" />
-          <button type="submit" disabled={!commentInput.trim()} className="p-2 bg-amber-500 text-black font-semibold rounded-xl disabled:opacity-40"><Send size={14} /></button>
-        </form>
-      </div>
-    </div>
-  );
-}
+// --- STORY VIEWER MODAL ---
+function StoryViewerModal({ stories, initialIndex, onClose }) {
+  const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  const [progress, setProgress] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const activeStory = stories[currentIndex];
 
-// --- AUTH MODAL ---
-function AuthModal({ onClose }) {
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [handle, setHandle] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
-
-  const handleAuthSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setErrorMsg("");
-    try {
-      if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              handle: handle.toLowerCase().replace(/[^a-z0-9_]/g, "") || email.split("@")[0],
-              full_name: fullName || "Social Nest User",
-            },
-          },
-        });
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-      }
-      onClose();
-    } catch (err) {
-      setErrorMsg(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    if (isPaused) return;
+    const step = 50;
+    const interval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 100) {
+          if (currentIndex < stories.length - 1) {
+            setCurrentIndex((i) => i + 1);
+            return 0;
+          } else {
+            onClose();
+            return 100;
+          }
+        }
+        return prev + (step / 5000) * 100;
+      });
+    }, step);
+    return () => clearInterval(interval);
+  }, [currentIndex, isPaused]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative">
-        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X size={20} /></button>
-        <h3 className="text-lg font-bold text-white mb-1">{isSignUp ? "Create an account" : "Welcome back"}</h3>
-        {errorMsg && <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs rounded-xl">{errorMsg}</div>}
-        <form onSubmit={handleAuthSubmit} className="flex flex-col gap-3">
-          {isSignUp && (
-            <>
-              <div>
-                <label className="text-[11px] font-semibold text-slate-400 block mb-1">Full Name</label>
-                <input type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Alex Rivera" className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500" />
-              </div>
-              <div>
-                <label className="text-[11px] font-semibold text-slate-400 block mb-1">Handle</label>
-                <input type="text" required value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="e.g. alex_rivera" className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500" />
-              </div>
-            </>
-          )}
-          <div>
-            <label className="text-[11px] font-semibold text-slate-400 block mb-1">Email</label>
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@domain.com" className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500" />
+    <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center">
+      <div
+        className="relative w-full max-w-md h-full sm:h-[85vh] bg-black sm:rounded-3xl overflow-hidden flex flex-col shadow-2xl"
+        onMouseDown={() => setIsPaused(true)}
+        onMouseUp={() => setIsPaused(false)}
+        onTouchStart={() => setIsPaused(true)}
+        onTouchEnd={() => setIsPaused(false)}
+      >
+        <div className="absolute top-3 inset-x-0 z-20 flex gap-1.5 px-3">
+          {stories.map((_, i) => (
+            <div key={i} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] rounded-full transition-all duration-75 ease-linear" style={{ width: i === currentIndex ? `${progress}%` : i < currentIndex ? "100%" : "0%" }} />
+            </div>
+          ))}
+        </div>
+
+        <div className="absolute top-6 inset-x-0 z-20 flex items-center justify-between px-4">
+          <div className="flex items-center gap-2">
+            <img src={activeStory.userAvatar} className="w-8 h-8 rounded-full object-cover border border-[#F2C4CE]/50" />
+            <span className="font-semibold text-sm text-white">{activeStory.username}</span>
           </div>
-          <div>
-            <label className="text-[11px] font-semibold text-slate-400 block mb-1">Password</label>
-            <input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500" />
-          </div>
-          <button type="submit" disabled={loading} className="w-full mt-2 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-black font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 disabled:opacity-50 flex items-center justify-center gap-2">
-            {loading && <Loader2 size={14} className="animate-spin" />}{isSignUp ? "Sign Up" : "Sign In"}
-          </button>
-        </form>
-        <div className="mt-5 text-center">
-          <button onClick={() => { setIsSignUp(!isSignUp); setErrorMsg(""); }} className="text-xs text-slate-400 hover:text-amber-400">
-            {isSignUp ? "Already have an account? Sign in" : "Don't have an account? Sign up"}
+          <button onClick={onClose} className="p-1 text-white/80 hover:text-white rounded-full bg-black/30">
+            <X size={20} />
           </button>
         </div>
+
+        <img key={activeStory.id} src={activeStory.mediaUrl} className="w-full h-full object-cover select-none" />
+
+        {activeStory.caption && (
+          <div className="absolute bottom-6 inset-x-4 bg-black/60 backdrop-blur-md p-3 rounded-2xl text-xs sm:text-sm text-white border border-white/10">
+            {activeStory.caption}
+          </div>
+        )}
+
+        <div className="absolute left-0 top-16 bottom-0 w-1/3 z-10 cursor-pointer" onClick={() => { if (currentIndex > 0) { setCurrentIndex((i) => i - 1); setProgress(0); } }} />
+        <div className="absolute right-0 top-16 bottom-0 w-2/3 z-10 cursor-pointer" onClick={() => { if (currentIndex < stories.length - 1) { setCurrentIndex((i) => i + 1); setProgress(0); } else { onClose(); } }} />
       </div>
     </div>
   );
