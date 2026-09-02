@@ -50,7 +50,9 @@ import {
   Sliders,
   AlertCircle,
   RefreshCw,
-  Disc
+  Disc,
+  Copy,
+  Check
 } from "lucide-react";
 
 // --- WEB AUDIO API NATIVE AMBIENT SFX ENGINE ---
@@ -147,9 +149,9 @@ const FILTER_STYLES = {
 };
 
 const SAMPLE_VIRAL_TRACKS = [
-  { id: "t1", title: "Espresso Vibe", artist: "Sabrina C.", url: "https://actions.google.com/sounds/v1/ambiences/coffee_shop.ogg" },
-  { id: "t2", title: "Midnight City Sparks", artist: "Synthwave", url: "https://actions.google.com/sounds/v1/foley/wind_synthetic_strong.ogg" },
-  { id: "t3", title: "Sunset Waves Lo-Fi", artist: "Nest Sounds", url: "https://actions.google.com/sounds/v1/weather/light_rain.ogg" },
+  { id: "t1", title: "Lofi Study Beats", artist: "Nest Sounds", url: "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=lofi-study-112191.mp3" },
+  { id: "t2", title: "Chill Urban Sunset", artist: "RetroWave", url: "https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3?filename=chill-abstract-intention-12099.mp3" },
+  { id: "t3", title: "Neon Cyber Pulse", artist: "ElectroNest", url: "https://cdn.pixabay.com/download/audio/2022/01/18/audio_d0a13f69d2.mp3?filename=electronic-future-beats-117997.mp3" },
 ];
 
 const STORY_MODES = {
@@ -164,18 +166,18 @@ const SAMPLE_STORIES = [
     username: "alex_dev",
     userAvatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
     mediaUrl: "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800",
-    audioUrl: "https://actions.google.com/sounds/v1/ambiences/coffee_shop.ogg",
-    audioTitle: "Espresso Vibe • Sabrina C.",
+    audioUrl: "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=lofi-study-112191.mp3",
+    audioTitle: "Lofi Study Beats • Nest Sounds",
     category: "announcement",
-    caption: "🚀 Audio stories and loop engine enabled!",
+    caption: "🚀 Studio video recording, chat search & sound live!",
   },
   {
     id: "s2",
     username: "sarah_m",
     userAvatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150",
     mediaUrl: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800",
-    audioUrl: "https://actions.google.com/sounds/v1/weather/light_rain.ogg",
-    audioTitle: "Sunset Waves Lo-Fi • Nest Sounds",
+    audioUrl: "https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3?filename=chill-abstract-intention-12099.mp3",
+    audioTitle: "Chill Urban Sunset • RetroWave",
     category: "routine",
     caption: "Morning coffee & ocean walk ☕🌊",
   },
@@ -216,6 +218,7 @@ export default function App() {
   const [activeCommentTarget, setActiveCommentTarget] = useState(null);
   const [isStudioOpen, setIsStudioOpen] = useState(false);
   const [isUploadSparkOpen, setIsUploadSparkOpen] = useState(false);
+  const [sparkShareModal, setSparkShareModal] = useState(null);
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -247,7 +250,7 @@ export default function App() {
       const u = session?.user ?? null;
       setCurrentUser(u);
       if (u) fetchUserProfile(u.id, u.user_metadata, u.email);
-      setTimeout(() => setAuthChecked(true), 900);
+      setTimeout(() => setAuthChecked(true), 800);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -699,6 +702,11 @@ export default function App() {
                     heightClass="h-[76vh]"
                     onOpenComments={(s) => setActiveCommentTarget({ type: "spark", item: s })}
                     onOpenUserProfile={handleOpenUserProfile}
+                    onOpenSendModal={() => {
+                      setActiveTab("messages");
+                      showToast("Select a friend to share this clip!");
+                    }}
+                    onOpenMoreMenu={(s) => setSparkShareModal(s)}
                   />
                 ))
               )}
@@ -712,6 +720,7 @@ export default function App() {
             currentUser={currentUser}
             currentHandle={currentHandle}
             activeChat={activeChat}
+            followingHandles={followingHandles}
             onSelectChat={(chat) => {
               setActiveChat(chat);
               setUnreadMsgCount(0);
@@ -804,7 +813,17 @@ export default function App() {
         />
       )}
 
-      {/* Redesigned Instagram-Grade Studio Modal */}
+      {/* Sparks 3-Dots Share Drawer */}
+      {sparkShareModal && (
+        <SparkShareDrawer
+          spark={sparkShareModal}
+          isDarkMode={isDarkMode}
+          onClose={() => setSparkShareModal(null)}
+          showToast={showToast}
+        />
+      )}
+
+      {/* Studio Camera & Video Recorder Modal */}
       {isStudioOpen && (
         <StudioCreatorModal
           isDarkMode={isDarkMode}
@@ -1106,7 +1125,7 @@ function HomeView({
   );
 }
 
-// --- GLASS VIDEO PLAYER WITH AUDIO TAG INTEGRATION ---
+// --- GLASS VIDEO PLAYER WITH ACTIVE AUDIO ---
 function GlassVideoPlayer({ src, audioUrl, isDarkMode }) {
   const videoRef = useRef(null);
   const audioRef = useRef(null);
@@ -1455,7 +1474,7 @@ function FeedCard({ post, isDarkMode, isLiked, isBookmarked, currentHandle, isFo
   );
 }
 
-// --- USER PROFILE MODAL (FIXED OVERLAPPING AVATAR STACKING) ---
+// --- USER PROFILE MODAL ---
 function UserProfileModal({ isDarkMode, profile, isFollowing, onToggleFollow, onDirectMessage, onClose, onSelectPost }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -1471,9 +1490,9 @@ function UserProfileModal({ isDarkMode, profile, isFollowing, onToggleFollow, on
           </button>
         </div>
 
-        {/* Content Section: Avatar Elevated via relative z-10 */}
+        {/* Content Section: Avatar Elevated via relative z-20 */}
         <div className="p-5 pt-0 flex-1 overflow-y-auto">
-          <div className="flex justify-between items-end -mt-11 mb-3 relative z-10">
+          <div className="flex justify-between items-end -mt-11 mb-3 relative z-20">
             <div className="p-1 rounded-full bg-[#2C2B30] border-2 border-[#F58F7C] shadow-lg">
               <img
                 src={profile.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300"}
@@ -1540,7 +1559,7 @@ function UserProfileModal({ isDarkMode, profile, isFollowing, onToggleFollow, on
   );
 }
 
-// --- PROFILE VIEW WITH ELEVATED AVATAR ---
+// --- PROFILE VIEW ---
 function ProfileView({ isDarkMode, user, posts, bookmarkedPostIds, onOpenSettings, onOpenEditProfile }) {
   const [profileTab, setProfileTab] = useState("posts");
   const savedPosts = posts.filter((p) => bookmarkedPostIds.has(p.id));
@@ -1570,7 +1589,7 @@ function ProfileView({ isDarkMode, user, posts, bookmarkedPostIds, onOpenSetting
 
         {/* Content Section: Avatar Elevated Above Banner */}
         <div className="p-5 pt-0">
-          <div className="flex items-end justify-between -mt-11 mb-3 relative z-10">
+          <div className="flex items-end justify-between -mt-11 mb-3 relative z-20">
             <div className="p-1 rounded-full bg-[#2C2B30] border-2 border-[#F58F7C] shadow-xl">
               <img src={user.avatar} className="w-20 h-20 rounded-full object-cover" />
             </div>
@@ -1661,18 +1680,24 @@ function ProfileView({ isDarkMode, user, posts, bookmarkedPostIds, onOpenSetting
   );
 }
 
-// --- REDESIGNED INSTAGRAM-GRADE STUDIO MODAL ---
+// --- INSTAGRAM-GRADE STUDIO WITH REAL VIDEO RECORDING ---
 function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
+  const [studioMode, setStudioMode] = useState("video"); // 'video' | 'photo'
   const [activeFilter, setActiveFilter] = useState("normal");
   const [selectedTrack, setSelectedTrack] = useState(null);
   const [caption, setCaption] = useState("");
-  const [capturedMedia, setCapturedMedia] = useState(null);
+  const [capturedMedia, setCapturedMedia] = useState(null); // { type: 'video'|'photo', url, blob }
   const [facingMode, setFacingMode] = useState("user");
   const [audioPickerOpen, setAudioPickerOpen] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
 
   const videoStreamRef = useRef(null);
   const mediaStreamRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const recordedChunksRef = useRef([]);
+  const timerRef = useRef(null);
   const fileInputRef = useRef(null);
 
   const startCamera = async () => {
@@ -1681,8 +1706,8 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facingMode, width: { ideal: 1080 }, height: { ideal: 1920 } },
-        audio: false,
+        video: { facingMode: facingMode, width: { ideal: 720 }, height: { ideal: 1280 } },
+        audio: true,
       });
       mediaStreamRef.current = stream;
       if (videoStreamRef.current) {
@@ -1699,6 +1724,7 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach((t) => t.stop());
       }
+      if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [facingMode, capturedMedia]);
 
@@ -1706,7 +1732,8 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
     setFacingMode((prev) => (prev === "user" ? "environment" : "user"));
   };
 
-  const handleCapture = () => {
+  // Capture Photo
+  const handleSnapPhoto = () => {
     if (!videoStreamRef.current) return;
     const canvas = document.createElement("canvas");
     canvas.width = videoStreamRef.current.videoWidth || 720;
@@ -1717,6 +1744,50 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
     const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
     setCapturedMedia({ type: "photo", url: dataUrl });
     if (mediaStreamRef.current) mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+  };
+
+  // Start Video Recording
+  const handleStartRecording = () => {
+    if (!mediaStreamRef.current) return;
+    recordedChunksRef.current = [];
+    try {
+      const options = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+        ? { mimeType: "video/webm;codecs=vp9,opus" }
+        : MediaRecorder.isTypeSupported("video/webm")
+        ? { mimeType: "video/webm" }
+        : { mimeType: "video/mp4" };
+
+      const recorder = new MediaRecorder(mediaStreamRef.current, options);
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(recordedChunksRef.current, { type: "video/webm" });
+        const videoUrl = URL.createObjectURL(blob);
+        setCapturedMedia({ type: "video", url: videoUrl, blob });
+      };
+
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+      setRecordSeconds(0);
+      timerRef.current = setInterval(() => {
+        setRecordSeconds((s) => s + 1);
+      }, 1000);
+    } catch (err) {
+      console.error("Recording error:", err);
+    }
+  };
+
+  // Stop Video Recording
+  const handleStopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (mediaStreamRef.current) mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+    }
   };
 
   const handlePublish = async () => {
@@ -1733,12 +1804,18 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
         if (error) throw error;
         const { data } = supabase.storage.from("post-media").getPublicUrl(fileName);
         finalMediaUrl = data.publicUrl;
+      } else if (capturedMedia?.blob) {
+        const fileName = `${Date.now()}.webm`;
+        const { error } = await supabase.storage.from("post-media").upload(fileName, capturedMedia.blob);
+        if (error) throw error;
+        const { data } = supabase.storage.from("post-media").getPublicUrl(fileName);
+        finalMediaUrl = data.publicUrl;
       } else if (capturedMedia?.url) {
         finalMediaUrl = capturedMedia.url;
       }
 
       await onSubmit({
-        type: capturedMedia ? "media" : "text",
+        type: capturedMedia?.type === "video" ? "video" : "media",
         content: caption.trim(),
         mediaUrl: finalMediaUrl,
         audioTitle: selectedTrack ? `${selectedTrack.title} • ${selectedTrack.artist}` : null,
@@ -1760,12 +1837,19 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
           <X size={20} />
         </button>
 
+        {isRecording && (
+          <div className="px-3 py-1 rounded-full bg-red-500/80 backdrop-blur-md text-white font-bold text-xs flex items-center gap-1.5 animate-pulse">
+            <div className="w-2 h-2 rounded-full bg-white" />
+            <span>00:{recordSeconds < 10 ? `0${recordSeconds}` : recordSeconds}</span>
+          </div>
+        )}
+
         <button
           onClick={() => setAudioPickerOpen(!audioPickerOpen)}
           className="px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/20 text-white flex items-center gap-1.5 text-xs font-semibold"
         >
           <Music size={14} className={selectedTrack ? "text-[#F58F7C] animate-spin" : ""} />
-          <span>{selectedTrack ? selectedTrack.title : "Add Audio"}</span>
+          <span>{selectedTrack ? selectedTrack.title : "Add Music"}</span>
         </button>
 
         {capturedMedia && (
@@ -1779,8 +1863,8 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
         )}
       </div>
 
-      {/* Floating Side Tools (Flip, Flash, Retake) */}
-      {!capturedMedia && (
+      {/* Floating Side Tools (Flip Camera) */}
+      {!capturedMedia && !isRecording && (
         <div className="absolute right-4 top-20 z-30 flex flex-col gap-4">
           <button
             onClick={toggleFacingMode}
@@ -1792,7 +1876,7 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
         </div>
       )}
 
-      {/* Full-bleed Camera / Media Viewfinder */}
+      {/* Camera / Captured Media Viewport */}
       <div className="w-full h-full relative bg-black flex items-center justify-center overflow-hidden">
         {!capturedMedia ? (
           <video
@@ -1800,6 +1884,16 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
             autoPlay
             playsInline
             muted
+            style={{ filter: FILTER_STYLES[activeFilter]?.filter || "none" }}
+            className="w-full h-full object-cover"
+          />
+        ) : capturedMedia.type === "video" ? (
+          <video
+            src={capturedMedia.url}
+            autoPlay
+            loop
+            playsInline
+            controls
             style={{ filter: FILTER_STYLES[activeFilter]?.filter || "none" }}
             className="w-full h-full object-cover"
           />
@@ -1816,7 +1910,7 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
           <div className="absolute top-16 inset-x-4 p-4 rounded-2xl bg-[#2C2B30]/95 backdrop-blur-xl border border-[#4F4F51] z-40 flex flex-col gap-2 shadow-2xl">
             <div className="flex justify-between items-center pb-2 border-b border-[#4F4F51]">
               <span className="text-xs font-bold text-[#D6D6D6] flex items-center gap-1.5">
-                <Disc size={14} className="text-[#F58F7C]" /> Select Trending Track
+                <Disc size={14} className="text-[#F58F7C]" /> Select Music Track
               </span>
               <button onClick={() => setAudioPickerOpen(false)}><X size={14} className="text-slate-400" /></button>
             </div>
@@ -1837,9 +1931,8 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
         )}
       </div>
 
-      {/* Bottom Shutter & Filter Carousel */}
+      {/* Bottom Shutter & Studio Mode Controls */}
       <div className="absolute bottom-0 inset-x-0 p-4 pb-8 z-30 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col gap-3">
-        {/* Caption Bar */}
         {capturedMedia && (
           <div className="flex items-center gap-2">
             <input
@@ -1869,39 +1962,70 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
           ))}
         </div>
 
-        {/* Shutter Button and Gallery Pick */}
+        {/* Shutter Button & Mode Selector */}
         {!capturedMedia && (
-          <div className="flex items-center justify-around pt-2">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="p-3 rounded-full bg-black/50 backdrop-blur-md text-white border border-white/20 hover:scale-105 transition-transform"
-            >
-              <ImageIcon size={20} />
-            </button>
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept="image/*,video/*"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files[0];
-                if (file) setCapturedMedia({ type: "upload", url: URL.createObjectURL(file), file });
-              }}
-            />
+          <div className="flex flex-col items-center gap-4 pt-1">
+            <div className="flex items-center justify-around w-full">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="p-3 rounded-full bg-black/50 backdrop-blur-md text-white border border-white/20 hover:scale-105 transition-transform"
+              >
+                <ImageIcon size={20} />
+              </button>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*,video/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files[0];
+                  if (file) {
+                    const isVid = file.type.startsWith("video");
+                    setCapturedMedia({ type: isVid ? "video" : "photo", url: URL.createObjectURL(file), file });
+                  }
+                }}
+              />
 
-            <button
-              onClick={handleCapture}
-              className="w-20 h-20 rounded-full border-4 border-white p-1 flex items-center justify-center hover:scale-105 transition-transform active:scale-95"
-            >
-              <div className="w-full h-full rounded-full bg-gradient-to-tr from-[#F58F7C] to-[#F2C4CE]" />
-            </button>
+              {/* Shutter Button */}
+              {studioMode === "video" ? (
+                <button
+                  onClick={isRecording ? handleStopRecording : handleStartRecording}
+                  className={`w-20 h-20 rounded-full border-4 ${isRecording ? "border-red-500 animate-pulse" : "border-white"} p-1 flex items-center justify-center hover:scale-105 transition-transform active:scale-95`}
+                >
+                  <div className={`w-full h-full ${isRecording ? "rounded-lg bg-red-500 scale-75" : "rounded-full bg-red-500"} transition-all`} />
+                </button>
+              ) : (
+                <button
+                  onClick={handleSnapPhoto}
+                  className="w-20 h-20 rounded-full border-4 border-white p-1 flex items-center justify-center hover:scale-105 transition-transform active:scale-95"
+                >
+                  <div className="w-full h-full rounded-full bg-gradient-to-tr from-[#F58F7C] to-[#F2C4CE]" />
+                </button>
+              )}
 
-            <button
-              onClick={() => setCapturedMedia(null)}
-              className="p-3 rounded-full bg-black/50 backdrop-blur-md text-white border border-white/20 opacity-0 pointer-events-none"
-            >
-              <Sliders size={20} />
-            </button>
+              <button
+                onClick={() => setCapturedMedia(null)}
+                className="p-3 rounded-full bg-black/50 backdrop-blur-md text-white border border-white/20 opacity-0 pointer-events-none"
+              >
+                <Sliders size={20} />
+              </button>
+            </div>
+
+            {/* Video vs Photo Switcher */}
+            <div className="flex items-center gap-6 text-xs font-bold uppercase tracking-widest text-slate-400">
+              <button
+                onClick={() => setStudioMode("video")}
+                className={studioMode === "video" ? "text-[#F58F7C] border-b-2 border-[#F58F7C] pb-0.5" : "hover:text-white"}
+              >
+                Video
+              </button>
+              <button
+                onClick={() => setStudioMode("photo")}
+                className={studioMode === "photo" ? "text-[#F58F7C] border-b-2 border-[#F58F7C] pb-0.5" : "hover:text-white"}
+              >
+                Photo
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -1909,8 +2033,8 @@ function StudioCreatorModal({ isDarkMode, onClose, onSubmit }) {
   );
 }
 
-// --- AUTOPLAYING & CONTINUOUS LOOPING SPARK CARD ---
-function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUserProfile }) {
+// --- AUTOPLAYING & LOOPING SPARK CARD WITH REELS-STYLE SEND ---
+function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUserProfile, onOpenSendModal, onOpenMoreMenu }) {
   const videoRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
@@ -1974,6 +2098,7 @@ function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUse
         {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
       </button>
 
+      {/* Right Social Actions Column */}
       <div className="absolute right-3 bottom-14 z-10 flex flex-col items-center gap-5">
         <button onClick={() => setLiked(!liked)} className="flex flex-col items-center gap-1 group/btn">
           <div className={`p-2.5 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 transition-transform group-hover/btn:scale-110 ${liked ? "text-[#F58F7C]" : "text-white"}`}>
@@ -1989,8 +2114,16 @@ function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUse
           <span className="text-[11px] font-semibold text-white drop-shadow">{spark.comments?.length || 0}</span>
         </button>
 
-        <button className="p-2.5 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 text-white transition-transform hover:scale-110">
-          <Share2 size={22} />
+        {/* Reels-Style Direct Message Send Button */}
+        <button onClick={onOpenSendModal} className="flex flex-col items-center gap-1 group/btn">
+          <div className="p-2.5 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 text-white transition-transform group-hover/btn:scale-110 hover:text-[#F58F7C]">
+            <Send size={20} className="-rotate-12" />
+          </div>
+        </button>
+
+        {/* 3-Dots More Options (Share & Copy Link) */}
+        <button onClick={() => onOpenMoreMenu(spark)} className="p-2 rounded-full bg-[#2C2B30]/60 backdrop-blur-md border border-white/10 text-white transition-transform hover:scale-110">
+          <MoreVertical size={18} />
         </button>
       </div>
 
@@ -2009,7 +2142,73 @@ function SparkCard({ spark, heightClass = "h-[580px]", onOpenComments, onOpenUse
   );
 }
 
-// --- STORY VIEWER WITH ACTIVE AUDIO PLAYBACK ---
+// --- SPARKS SHARE DRAWER (COPY LINK & NATIVE PLATFORMS) ---
+function SparkShareDrawer({ spark, isDarkMode, onClose, showToast }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(spark.video_url || window.location.href);
+    setCopied(true);
+    showToast("Link copied to clipboard!");
+    setTimeout(() => {
+      setCopied(false);
+      onClose();
+    }, 1200);
+  };
+
+  const handleNativeShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "Social Nest Spark",
+          text: spark.caption || "Watch this Spark on Social Nest!",
+          url: spark.video_url || window.location.href,
+        });
+        onClose();
+      } catch (err) {
+        console.log("Share cancelled or failed");
+      }
+    } else {
+      handleCopyLink();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end justify-center p-0 sm:p-4">
+      <div className={`w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 border shadow-2xl ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-white" : "bg-white border-[#D6D6D6] text-slate-900"}`}>
+        <div className="flex justify-between items-center pb-3 border-b border-[#4F4F51]">
+          <span className="text-xs font-bold uppercase tracking-wider text-[#F58F7C]">Share Spark</span>
+          <button onClick={onClose}><X size={18} /></button>
+        </div>
+
+        <div className="flex flex-col gap-3 mt-4">
+          <button
+            onClick={handleCopyLink}
+            className="w-full p-3 rounded-2xl bg-[#4F4F51]/30 hover:bg-[#4F4F51]/60 flex items-center justify-between transition-colors"
+          >
+            <div className="flex items-center gap-3 text-xs font-semibold">
+              <Copy size={16} className="text-[#F2C4CE]" />
+              <span>Copy Link</span>
+            </div>
+            {copied ? <Check size={16} className="text-green-400" /> : null}
+          </button>
+
+          <button
+            onClick={handleNativeShare}
+            className="w-full p-3 rounded-2xl bg-[#4F4F51]/30 hover:bg-[#4F4F51]/60 flex items-center justify-between transition-colors"
+          >
+            <div className="flex items-center gap-3 text-xs font-semibold">
+              <Share2 size={16} className="text-[#F58F7C]" />
+              <span>Share via other apps...</span>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- STORY VIEWER MODAL ---
 function StoryViewerModal({ stories, initialIndex, onClose }) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [progress, setProgress] = useState(0);
@@ -2218,8 +2417,6 @@ function EditProfileModal({ isDarkMode, currentProfile, onClose, onSave }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className={`w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl relative border ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-white" : "bg-white border-slate-200 text-slate-900"}`}>
-        
-        {/* Banner Picker Box */}
         <div
           onClick={() => bannerInputRef.current?.click()}
           className="h-28 w-full relative bg-[#4F4F51] cursor-pointer group flex items-center justify-center border-b border-[#4F4F51]"
@@ -2238,7 +2435,7 @@ function EditProfileModal({ isDarkMode, currentProfile, onClose, onSave }) {
         <button onClick={onClose} className="absolute top-3 right-3 p-1.5 rounded-full bg-black/60 text-white"><X size={16} /></button>
 
         <div className="p-6 pt-0">
-          <div className="flex items-end justify-between -mt-10 mb-4 relative z-10">
+          <div className="flex items-end justify-between -mt-10 mb-4 relative z-20">
             <div
               onClick={() => avatarInputRef.current?.click()}
               className="relative group cursor-pointer p-1 rounded-full bg-[#2C2B30] border-2 border-[#F58F7C]"
@@ -2271,13 +2468,15 @@ function EditProfileModal({ isDarkMode, currentProfile, onClose, onSave }) {
   );
 }
 
-// --- MESSAGES VIEW ---
-function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, onSelectChat, onBack }) {
+// --- MESSAGES VIEW (WITH SEARCH FOR FOLLOWED USERS & ANY CREATOR) ---
+function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, followingHandles, onSelectChat, onBack }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
   const [loadingChat, setLoadingChat] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [recentConversations, setRecentConversations] = useState([]);
+  const [searchedFollowedUsers, setSearchedFollowedUsers] = useState([]);
+  const [isSearchingUsers, setIsSearchingUsers] = useState(false);
   const messagesEndRef = useRef(null);
 
   const getConversationId = (userA, userB) => [userA, userB].sort().join("_");
@@ -2312,6 +2511,32 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, onSe
   useEffect(() => {
     fetchRecentConversations();
   }, [currentUser, currentHandle, activeChat]);
+
+  // Search through Followed Creators + Database Profiles
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchedFollowedUsers([]);
+      setIsSearchingUsers(false);
+      return;
+    }
+
+    const searchUsers = async () => {
+      setIsSearchingUsers(true);
+      const clean = searchQuery.trim().toLowerCase().replace("@", "");
+      const { data } = await supabase
+        .from("profiles")
+        .select("handle, full_name, avatar_url")
+        .neq("handle", currentHandle)
+        .or(`handle.ilike.%${clean}%,full_name.ilike.%${clean}%`)
+        .limit(8);
+
+      setSearchedFollowedUsers(data || []);
+      setIsSearchingUsers(false);
+    };
+
+    const debounce = setTimeout(searchUsers, 200);
+    return () => clearTimeout(debounce);
+  }, [searchQuery, currentHandle]);
 
   useEffect(() => {
     if (!activeChat || !currentUser) return;
@@ -2404,47 +2629,92 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, onSe
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Search Input */}
       <div className="relative">
         <Search size={16} className={`absolute left-3.5 top-3 ${isDarkMode ? "text-slate-500" : "text-slate-400"}`} />
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search by @handle to start a DM..."
+          placeholder="Search followed creators or by @handle to chat..."
           className={`w-full rounded-2xl pl-10 pr-4 py-2.5 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-[#D6D6D6]" : "bg-white border-slate-200 text-slate-900"}`}
         />
-      </div>
-
-      <div className="flex flex-col gap-2 mt-1">
-        <span className="text-[11px] font-semibold text-slate-400 px-1">Recent Chats</span>
-        {recentConversations.length === 0 ? (
-          <div className="text-center py-12 text-xs text-slate-500">No conversations yet.</div>
-        ) : (
-          recentConversations.map((chat) => (
-            <div
-              key={chat.userId}
-              onClick={() => onSelectChat(chat)}
-              className={`p-3.5 rounded-2xl flex items-center gap-3.5 cursor-pointer border transition-all ${
-                isDarkMode ? "bg-[#2C2B30] hover:bg-[#4F4F51]/40 border-[#4F4F51]" : "bg-white hover:bg-slate-100 border-slate-200"
-              }`}
-            >
-              <div className="relative">
-                <img src={chat.avatar} className="w-11 h-11 rounded-full object-cover" />
-                {chat.unread && <span className="absolute top-0 right-0 w-3 h-3 bg-[#F58F7C] rounded-full border-2 border-black" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                  <p className={`text-xs font-bold truncate ${isDarkMode ? "text-white" : "text-slate-900"}`}>@{chat.userId}</p>
-                  <span className="text-[10px] text-slate-500">{chat.time}</span>
-                </div>
-                <p className={`text-xs truncate mt-0.5 ${chat.unread ? "text-[#F58F7C] font-bold" : "text-slate-400"}`}>
-                  {chat.lastMessage}
-                </p>
-              </div>
-            </div>
-          ))
+        {searchQuery && (
+          <button onClick={() => setSearchQuery("")} className="absolute right-3.5 top-3 text-slate-500 hover:text-white">
+            <X size={14} />
+          </button>
         )}
       </div>
+
+      {/* Searched Creators Section */}
+      {searchQuery.trim() && (
+        <div className="flex flex-col gap-2">
+          <span className="text-[11px] font-semibold text-[#F58F7C] px-1">Creators Matching Search</span>
+          {isSearchingUsers ? (
+            <p className="text-xs text-slate-500 py-4 text-center">Searching creators...</p>
+          ) : searchedFollowedUsers.length === 0 ? (
+            <p className="text-xs text-slate-500 py-4 text-center">No creator found.</p>
+          ) : (
+            searchedFollowedUsers.map((u) => {
+              const isFollowed = followingHandles.includes(u.handle);
+              return (
+                <div
+                  key={u.handle}
+                  onClick={() => onSelectChat({ userId: u.handle, username: u.full_name || u.handle, avatar: u.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150" })}
+                  className={`p-3 rounded-2xl flex items-center justify-between cursor-pointer border transition-all ${isDarkMode ? "bg-[#4F4F51]/30 hover:bg-[#4F4F51]/60 border-[#4F4F51]" : "bg-white hover:bg-slate-100 border-slate-200"}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <img src={u.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"} className="w-9 h-9 rounded-full object-cover" />
+                    <div>
+                      <p className="text-xs font-bold text-white">{u.full_name || u.handle}</p>
+                      <p className="text-[10px] text-[#F58F7C]">@{u.handle}</p>
+                    </div>
+                  </div>
+                  {isFollowed && (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#F58F7C]/20 text-[#F58F7C] border border-[#F58F7C]/30">
+                      Following
+                    </span>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* Recent Chats Section */}
+      {!searchQuery.trim() && (
+        <div className="flex flex-col gap-2 mt-1">
+          <span className="text-[11px] font-semibold text-slate-400 px-1">Recent Chats</span>
+          {recentConversations.length === 0 ? (
+            <div className="text-center py-12 text-xs text-slate-500">No conversations yet.</div>
+          ) : (
+            recentConversations.map((chat) => (
+              <div
+                key={chat.userId}
+                onClick={() => onSelectChat(chat)}
+                className={`p-3.5 rounded-2xl flex items-center gap-3.5 cursor-pointer border transition-all ${
+                  isDarkMode ? "bg-[#2C2B30] hover:bg-[#4F4F51]/40 border-[#4F4F51]" : "bg-white hover:bg-slate-100 border-slate-200"
+                }`}
+              >
+                <div className="relative">
+                  <img src={chat.avatar} className="w-11 h-11 rounded-full object-cover" />
+                  {chat.unread && <span className="absolute top-0 right-0 w-3 h-3 bg-[#F58F7C] rounded-full border-2 border-black" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <p className={`text-xs font-bold truncate ${isDarkMode ? "text-white" : "text-slate-900"}`}>@{chat.userId}</p>
+                    <span className="text-[10px] text-slate-500">{chat.time}</span>
+                  </div>
+                  <p className={`text-xs truncate mt-0.5 ${chat.unread ? "text-[#F58F7C] font-bold" : "text-slate-400"}`}>
+                    {chat.lastMessage}
+                  </p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
