@@ -52,7 +52,7 @@ const SAMPLE_STORIES = [
     userAvatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
     mediaUrl: "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800",
     category: "announcement",
-    caption: "🚀 Social Nest v2.1 with verified likes & video posts!",
+    caption: "🚀 Social Nest v2.2 with bookmarks & saved collections!",
   },
   {
     id: "s2",
@@ -79,6 +79,7 @@ export default function App() {
   const [selectedStoryIndex, setSelectedStoryIndex] = useState(null);
   const [posts, setPosts] = useState([]);
   const [likedPostIds, setLikedPostIds] = useState(new Set());
+  const [bookmarkedPostIds, setBookmarkedPostIds] = useState(new Set());
   const [sparks, setSparks] = useState([]);
   const [followingHandles, setFollowingHandles] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -130,39 +131,36 @@ export default function App() {
   const currentHandle = profile?.handle || (currentUser ? currentUser.email.split("@")[0] : "guest");
   const currentAvatar = profile?.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300";
 
-  // Fetch likes belonging to current user
-  const fetchUserLikes = async () => {
+  // Fetch likes and bookmarks for current user
+  const fetchUserEngagements = async () => {
     if (!currentHandle || currentHandle === "guest") return;
-    const { data } = await supabase.from("post_likes").select("post_id").eq("user_handle", currentHandle);
-    if (data) {
-      setLikedPostIds(new Set(data.map((l) => l.post_id)));
-    }
+
+    const { data: likes } = await supabase.from("post_likes").select("post_id").eq("user_handle", currentHandle);
+    if (likes) setLikedPostIds(new Set(likes.map((l) => l.post_id)));
+
+    const { data: bms } = await supabase.from("bookmarks").select("post_id").eq("user_handle", currentHandle);
+    if (bms) setBookmarkedPostIds(new Set(bms.map((b) => b.post_id)));
   };
 
-  // Fetch follows, unread badges, notifications
   const fetchMetaData = async () => {
     if (!currentHandle || currentHandle === "guest") return;
 
-    // Follows
     const { data: followData } = await supabase.from("follows").select("following_handle").eq("follower_handle", currentHandle);
     if (followData) setFollowingHandles(followData.map((f) => f.following_handle));
 
-    // Notifications
     const { data: notifData } = await supabase.from("notifications").select("*").eq("recipient_handle", currentHandle).order("created_at", { ascending: false }).limit(20);
     if (notifData) setNotifications(notifData);
 
-    // Unread messages count
     const { count } = await supabase.from("messages").select("*", { count: "exact", head: true }).eq("recipient_handle", currentHandle).eq("is_read", false);
     setUnreadMsgCount(count || 0);
   };
 
   useEffect(() => {
-    fetchUserLikes();
+    fetchUserEngagements();
     fetchMetaData();
 
     if (!currentHandle || currentHandle === "guest") return;
 
-    // Realtime notifications
     const channel = supabase
       .channel("notif_msg_channel")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `recipient_handle=eq.${currentHandle}` }, (p) => {
@@ -251,7 +249,6 @@ export default function App() {
     }
   };
 
-  // Enforced 1 Like Per User
   const handleLikePost = async (post) => {
     if (!currentUser) {
       setAuthModalOpen(true);
@@ -261,7 +258,6 @@ export default function App() {
     const isAlreadyLiked = likedPostIds.has(post.id);
     const updatedCount = isAlreadyLiked ? Math.max(0, post.likes - 1) : post.likes + 1;
 
-    // Optimistic UI update
     setLikedPostIds((prev) => {
       const next = new Set(prev);
       if (isAlreadyLiked) next.delete(post.id);
@@ -287,7 +283,33 @@ export default function App() {
       }
       await supabase.from("posts").update({ likes_count: updatedCount }).eq("id", post.id);
     } catch (err) {
-      console.error("Like toggle error:", err.message);
+      console.error("Like error:", err.message);
+    }
+  };
+
+  // Toggle bookmark in DB
+  const handleToggleBookmark = async (postId) => {
+    if (!currentUser) {
+      setAuthModalOpen(true);
+      return;
+    }
+
+    const isBookmarked = bookmarkedPostIds.has(postId);
+    setBookmarkedPostIds((prev) => {
+      const next = new Set(prev);
+      if (isBookmarked) next.delete(postId);
+      else next.add(postId);
+      return next;
+    });
+
+    try {
+      if (isBookmarked) {
+        await supabase.from("bookmarks").delete().eq("post_id", postId).eq("user_handle", currentHandle);
+      } else {
+        await supabase.from("bookmarks").insert([{ post_id: postId, user_handle: currentHandle }]);
+      }
+    } catch (e) {
+      console.error("Bookmark error:", e);
     }
   };
 
@@ -336,7 +358,6 @@ export default function App() {
     }
   };
 
-  // Filter posts by feed tabs, hashtags, and text search
   const displayedPosts = posts.filter((p) => {
     if (feedFilter === "following" && !followingHandles.includes(p.username) && p.username !== currentHandle) {
       return false;
@@ -379,13 +400,13 @@ export default function App() {
           <button onClick={() => setActiveTab("messages")} className="relative p-2 text-slate-300 hover:text-white rounded-full transition-colors">
             <Mail size={19} />
             {unreadMsgCount > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-amber-500 rounded-full flex items-center justify-center text-[9px] font-bold text-black" />
+              <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-amber-500 rounded-full" />
             )}
           </button>
         </div>
       </header>
 
-      {/* Views */}
+      {/* Main Views */}
       <main className="w-full max-w-md px-3 pt-3">
         {activeTab === "home" && (
           <HomeView
@@ -399,6 +420,7 @@ export default function App() {
             onSelectStory={(idx) => setSelectedStoryIndex(idx)}
             posts={displayedPosts}
             likedPostIds={likedPostIds}
+            bookmarkedPostIds={bookmarkedPostIds}
             loading={loadingPosts}
             profileAvatar={currentAvatar}
             currentHandle={currentHandle}
@@ -408,6 +430,7 @@ export default function App() {
             onOpenCreate={() => (!currentUser ? setAuthModalOpen(true) : setIsCreateOpen(true))}
             onOpenComments={(post) => setActiveCommentPost(post)}
             onLikePost={handleLikePost}
+            onToggleBookmark={handleToggleBookmark}
           />
         )}
 
@@ -455,6 +478,8 @@ export default function App() {
                 following: followingHandles.length,
               }
             }}
+            posts={posts}
+            bookmarkedPostIds={bookmarkedPostIds}
             currentUser={currentUser}
             onOpenAuth={() => setAuthModalOpen(true)}
             onOpenEditProfile={() => setEditProfileOpen(true)}
@@ -503,7 +528,7 @@ export default function App() {
   );
 }
 
-// --- HOME VIEW WITH SEARCH & HASHTAGS ---
+// --- HOME VIEW ---
 function HomeView({
   stories,
   feedFilter,
@@ -515,6 +540,7 @@ function HomeView({
   onSelectStory,
   posts,
   likedPostIds,
+  bookmarkedPostIds,
   loading,
   profileAvatar,
   currentHandle,
@@ -523,11 +549,11 @@ function HomeView({
   onDeletePost,
   onOpenCreate,
   onOpenComments,
-  onLikePost
+  onLikePost,
+  onToggleBookmark
 }) {
   return (
     <div className="flex flex-col gap-3">
-      {/* Search Input Bar */}
       <div className="relative">
         <Search size={15} className="absolute left-3.5 top-3 text-slate-500" />
         <input
@@ -544,7 +570,6 @@ function HomeView({
         )}
       </div>
 
-      {/* Active Hashtag Filter Chip */}
       {searchFilterTag && (
         <div className="flex items-center justify-between bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 rounded-xl">
           <span className="text-xs text-amber-400 font-bold flex items-center gap-1">
@@ -556,7 +581,6 @@ function HomeView({
         </div>
       )}
 
-      {/* Feed Toggle */}
       <div className="flex bg-slate-900/80 p-1 rounded-xl border border-slate-800 text-xs font-semibold">
         <button onClick={() => setFeedFilter("all")} className={`flex-1 py-1.5 rounded-lg transition-all ${feedFilter === "all" ? "bg-amber-500 text-black font-bold shadow-md shadow-amber-500/20" : "text-slate-400 hover:text-white"}`}>
           Explore
@@ -566,24 +590,30 @@ function HomeView({
         </button>
       </div>
 
-      {/* Story Tray */}
+      {/* Story Tray with Hover & Glow Animation */}
       <div className="bg-slate-900/60 backdrop-blur-sm p-3.5 rounded-2xl border border-slate-800/80 shadow-lg">
         <div className="flex gap-4 overflow-x-auto no-scrollbar">
           {stories.map((story, idx) => {
             const mode = STORY_MODES[story.category];
             return (
-              <button key={story.id} onClick={() => onSelectStory(idx)} className="flex flex-col items-center gap-1.5 focus:outline-none flex-shrink-0">
-                <div className={`p-[2.5px] rounded-full bg-gradient-to-tr ${mode.color} transition-transform hover:scale-105`}>
+              <button
+                key={story.id}
+                onClick={() => onSelectStory(idx)}
+                className="flex flex-col items-center gap-1.5 focus:outline-none flex-shrink-0 group"
+              >
+                <div className={`p-[2.5px] rounded-full bg-gradient-to-tr ${mode.color} transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg group-hover:shadow-amber-500/20`}>
                   <img src={story.userAvatar} className="w-12 h-12 rounded-full object-cover border-2 border-slate-950" />
                 </div>
-                <span className="text-[11px] text-slate-300 truncate max-w-[55px]">{story.username}</span>
+                <span className="text-[11px] text-slate-300 truncate max-w-[55px] group-hover:text-amber-400 transition-colors">
+                  {story.username}
+                </span>
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Quick Text Bar */}
+      {/* Quick Post Bar */}
       <div onClick={onOpenCreate} className="bg-slate-900/50 border border-slate-800/80 rounded-2xl p-3.5 flex items-center gap-3 cursor-pointer hover:border-slate-700 transition-colors shadow-sm">
         <img src={profileAvatar} className="w-8 h-8 rounded-full object-cover border border-slate-800" />
         <span className="text-xs text-slate-400 flex-1">Share a thought, image, or video...</span>
@@ -594,7 +624,7 @@ function HomeView({
         </div>
       </div>
 
-      {/* Posts Feed */}
+      {/* Posts List */}
       <div className="flex flex-col gap-3">
         {loading ? (
           <p className="text-xs text-slate-500 text-center py-8">Loading posts...</p>
@@ -608,12 +638,14 @@ function HomeView({
               key={post.id}
               post={post}
               isLiked={likedPostIds.has(post.id)}
+              isBookmarked={bookmarkedPostIds.has(post.id)}
               currentHandle={currentHandle}
               isFollowing={followingHandles.includes(post.username)}
               onToggleFollow={() => onToggleFollow(post.username)}
               onDeletePost={() => onDeletePost(post.id)}
               onOpenComments={() => onOpenComments(post)}
               onLikePost={() => onLikePost(post)}
+              onToggleBookmark={() => onToggleBookmark(post.id)}
               onSelectTag={(tag) => setSearchFilterTag(tag)}
             />
           ))
@@ -623,7 +655,6 @@ function HomeView({
   );
 }
 
-// --- PARSED HASHTAG TEXT HELPER ---
 function FormattedPostText({ text, onSelectTag }) {
   if (!text) return null;
   const parts = text.split(/(#[a-zA-Z0-9_]+)/g);
@@ -648,8 +679,8 @@ function FormattedPostText({ text, onSelectTag }) {
   );
 }
 
-// --- FEED CARD SUPPORTING PHOTO + VIDEO ---
-function FeedCard({ post, isLiked, currentHandle, isFollowing, onToggleFollow, onDeletePost, onOpenComments, onLikePost, onSelectTag }) {
+// --- FEED CARD WITH WORKING BOOKMARK ---
+function FeedCard({ post, isLiked, isBookmarked, currentHandle, isFollowing, onToggleFollow, onDeletePost, onOpenComments, onLikePost, onToggleBookmark, onSelectTag }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const isOwner = post.username === currentHandle;
   const isVideo = post.mediaUrl && (post.mediaUrl.endsWith(".mp4") || post.mediaUrl.endsWith(".webm") || post.mediaUrl.endsWith(".mov") || post.type === "video");
@@ -717,9 +748,14 @@ function FeedCard({ post, isLiked, currentHandle, isFollowing, onToggleFollow, o
           <span>{post.comments?.length || 0}</span>
         </button>
 
-        <button className="flex items-center gap-1.5 text-xs hover:text-emerald-400 transition-colors">
-          <Repeat size={16} />
-          <span>{post.reposts || 0}</span>
+        {/* Working Bookmark Button */}
+        <button
+          onClick={onToggleBookmark}
+          className={`flex items-center gap-1.5 text-xs transition-colors ${
+            isBookmarked ? "text-amber-400 font-bold" : "hover:text-amber-400"
+          }`}
+        >
+          <Bookmark size={16} className={isBookmarked ? "fill-amber-400" : ""} />
         </button>
 
         <button className="hover:text-white transition-colors">
@@ -730,9 +766,215 @@ function FeedCard({ post, isLiked, currentHandle, isFollowing, onToggleFollow, o
   );
 }
 
-// --- CREATE POST MODAL (PHOTO + VIDEO SUPPORT) ---
+// --- PROFILE VIEW WITH SAVED/BOOKMARKS TAB ---
+function ProfileView({ user, posts, bookmarkedPostIds, currentUser, onOpenAuth, onOpenEditProfile }) {
+  const [profileTab, setProfileTab] = useState("posts"); // 'posts', 'saved', 'sparks'
+
+  const savedPosts = posts.filter((p) => bookmarkedPostIds.has(p.id));
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="bg-slate-900/50 border border-slate-800/80 rounded-2xl p-5 shadow-lg">
+        <div className="flex items-center justify-between">
+          <img src={user.avatar} className="w-20 h-20 rounded-full object-cover border-2 border-amber-500 p-0.5" />
+          <div className="flex gap-6 text-center">
+            <div><p className="font-bold text-base">{user.stats.posts}</p><p className="text-[11px] text-slate-400">Posts</p></div>
+            <div><p className="font-bold text-base">{user.stats.following}</p><p className="text-[11px] text-slate-400">Following</p></div>
+            <div><p className="font-bold text-base">{bookmarkedPostIds.size}</p><p className="text-[11px] text-slate-400">Saved</p></div>
+          </div>
+        </div>
+        <div className="mt-4">
+          <h2 className="font-bold text-sm">{user.name}</h2>
+          <p className="text-xs text-amber-400">@{user.handle}</p>
+          <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">{user.bio}</p>
+        </div>
+        <div className="flex gap-2.5 mt-4">
+          {currentUser ? (
+            <>
+              <button onClick={onOpenEditProfile} className="flex-1 bg-white hover:bg-slate-200 text-slate-950 font-semibold text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 transition-colors"><Edit3 size={13} /> Edit Profile</button>
+              <button onClick={() => supabase.auth.signOut()} className="px-3.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-semibold text-xs py-2 rounded-xl flex items-center gap-1.5 transition-colors"><LogOut size={14} /> Log Out</button>
+            </>
+          ) : (
+            <button onClick={onOpenAuth} className="flex-1 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs py-2.5 rounded-xl shadow-lg shadow-amber-500/20 transition-all">Sign In to Your Account</button>
+          )}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-slate-800">
+        <button
+          onClick={() => setProfileTab("posts")}
+          className={`flex-1 py-2.5 flex justify-center items-center gap-2 text-xs font-semibold border-b-2 transition-all ${
+            profileTab === "posts" ? "border-amber-400 text-amber-400" : "border-transparent text-slate-500 hover:text-slate-300"
+          }`}
+        >
+          <Grid size={16} /> Posts
+        </button>
+        <button
+          onClick={() => setProfileTab("saved")}
+          className={`flex-1 py-2.5 flex justify-center items-center gap-2 text-xs font-semibold border-b-2 transition-all ${
+            profileTab === "saved" ? "border-amber-400 text-amber-400" : "border-transparent text-slate-500 hover:text-slate-300"
+          }`}
+        >
+          <Bookmark size={16} /> Saved ({bookmarkedPostIds.size})
+        </button>
+        <button
+          onClick={() => setProfileTab("sparks")}
+          className={`flex-1 py-2.5 flex justify-center items-center gap-2 text-xs font-semibold border-b-2 transition-all ${
+            profileTab === "sparks" ? "border-amber-400 text-amber-400" : "border-transparent text-slate-500 hover:text-slate-300"
+          }`}
+        >
+          <Film size={16} /> Sparks
+        </button>
+      </div>
+
+      {/* Tab Panels */}
+      {profileTab === "posts" && (
+        <div className="py-8 text-center text-slate-500 text-xs">
+          Your shared posts are displayed directly on the main feed.
+        </div>
+      )}
+
+      {profileTab === "saved" && (
+        <div className="flex flex-col gap-2.5">
+          {savedPosts.length === 0 ? (
+            <div className="text-center py-12 text-slate-500 text-xs">
+              <Bookmark size={28} className="mx-auto mb-2 opacity-30 text-amber-400" />
+              No saved posts yet. Tap the bookmark icon on any post to store it here.
+            </div>
+          ) : (
+            savedPosts.map((p) => (
+              <div key={p.id} className="bg-slate-900/60 border border-slate-800/80 p-3 rounded-2xl flex items-center gap-3">
+                {p.mediaUrl ? (
+                  <img src={p.mediaUrl} className="w-12 h-12 rounded-xl object-cover" />
+                ) : (
+                  <div className="w-12 h-12 rounded-xl bg-slate-950 flex items-center justify-center text-amber-400 font-bold">
+                    Aa
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-slate-200 truncate">@{p.username}</p>
+                  <p className="text-xs text-slate-400 truncate mt-0.5">{p.content || "Media post"}</p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {profileTab === "sparks" && (
+        <div className="py-12 text-center text-slate-500 text-xs">
+          <Zap size={32} className="mx-auto mb-2 opacity-40 text-amber-400" />
+          Clips uploaded are accessible through the public Sparks tab.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- STORY VIEWER MODAL WITH ANIMATED TRANSITIONS ---
+function StoryViewerModal({ stories, initialIndex, onClose }) {
+  const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  const [progress, setProgress] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const activeStory = stories[currentIndex];
+
+  useEffect(() => {
+    if (isPaused) return;
+    const step = 50;
+    const interval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 100) {
+          if (currentIndex < stories.length - 1) {
+            setCurrentIndex((i) => i + 1);
+            return 0;
+          } else {
+            onClose();
+            return 100;
+          }
+        }
+        return prev + (step / 5000) * 100;
+      });
+    }, step);
+    return () => clearInterval(interval);
+  }, [currentIndex, isPaused]);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center animate-in fade-in duration-200">
+      <div
+        className="relative w-full max-w-md h-full sm:h-[85vh] bg-slate-950 sm:rounded-3xl overflow-hidden flex flex-col shadow-2xl transition-transform"
+        onMouseDown={() => setIsPaused(true)}
+        onMouseUp={() => setIsPaused(false)}
+        onTouchStart={() => setIsPaused(true)}
+        onTouchEnd={() => setIsPaused(false)}
+      >
+        {/* Animated Bar Indicators */}
+        <div className="absolute top-3 inset-x-0 z-20 flex gap-1.5 px-3">
+          {stories.map((_, i) => (
+            <div key={i} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-amber-400 rounded-full transition-all duration-75 ease-linear"
+                style={{ width: i === currentIndex ? `${progress}%` : i < currentIndex ? "100%" : "0%" }}
+              />
+            </div>
+          ))}
+        </div>
+
+        {/* Top Header */}
+        <div className="absolute top-6 inset-x-0 z-20 flex items-center justify-between px-4">
+          <div className="flex items-center gap-2">
+            <img src={activeStory.userAvatar} className="w-8 h-8 rounded-full object-cover border border-amber-400/50" />
+            <span className="font-semibold text-sm">{activeStory.username}</span>
+            {isPaused && <span className="text-[10px] bg-black/60 px-2 py-0.5 rounded-full text-amber-400">Paused</span>}
+          </div>
+          <button onClick={onClose} className="p-1 text-white/80 hover:text-white rounded-full bg-black/30">
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Story Image */}
+        <img
+          key={activeStory.id}
+          src={activeStory.mediaUrl}
+          alt=""
+          className="w-full h-full object-cover select-none animate-in fade-in duration-300"
+        />
+
+        {activeStory.caption && (
+          <div className="absolute bottom-6 inset-x-4 bg-black/60 backdrop-blur-md p-3 rounded-2xl text-xs sm:text-sm border border-white/10">
+            {activeStory.caption}
+          </div>
+        )}
+
+        {/* Tap controls */}
+        <div
+          className="absolute left-0 top-16 bottom-0 w-1/3 z-10 cursor-pointer"
+          onClick={() => {
+            if (currentIndex > 0) {
+              setCurrentIndex((i) => i - 1);
+              setProgress(0);
+            }
+          }}
+        />
+        <div
+          className="absolute right-0 top-16 bottom-0 w-2/3 z-10 cursor-pointer"
+          onClick={() => {
+            if (currentIndex < stories.length - 1) {
+              setCurrentIndex((i) => i + 1);
+              setProgress(0);
+            } else {
+              onClose();
+            }
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// --- CREATE POST MODAL ---
 function CreatePostModal({ onClose, onSubmit }) {
-  const [postType, setPostType] = useState("text"); // 'text', 'photo', 'video'
+  const [postType, setPostType] = useState("text");
   const [content, setContent] = useState("");
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
@@ -869,7 +1111,7 @@ function CreatePostModal({ onClose, onSubmit }) {
   );
 }
 
-// --- MESSAGES VIEW WITH UNREAD BADGES ---
+// --- MESSAGES VIEW ---
 function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, onBack, onOpenAuth }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
@@ -912,7 +1154,6 @@ function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, on
     fetchRecentConversations();
   }, [currentUser, currentHandle, activeChat]);
 
-  // Realtime subscription and mark as read
   useEffect(() => {
     if (!activeChat || !currentUser) return;
     const convId = getConversationId(currentHandle, activeChat.userId);
@@ -923,7 +1164,6 @@ function MessagesView({ currentUser, currentHandle, activeChat, onSelectChat, on
       if (data) setMessages(data);
       setLoadingChat(false);
 
-      // Mark partner's messages as read
       await supabase.from("messages").update({ is_read: true }).eq("conversation_id", convId).eq("recipient_handle", currentHandle);
     };
 
@@ -1132,44 +1372,6 @@ function EditProfileModal({ currentProfile, onClose, onSave }) {
           </button>
         </form>
       </div>
-    </div>
-  );
-}
-
-// --- PROFILE VIEW ---
-function ProfileView({ user, currentUser, onOpenAuth, onOpenEditProfile }) {
-  const [profileTab, setProfileTab] = useState("posts");
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="bg-slate-900/50 border border-slate-800/80 rounded-2xl p-5 shadow-lg">
-        <div className="flex items-center justify-between">
-          <img src={user.avatar} className="w-20 h-20 rounded-full object-cover border-2 border-amber-500 p-0.5" />
-          <div className="flex gap-6 text-center">
-            <div><p className="font-bold text-base">{user.stats.posts}</p><p className="text-[11px] text-slate-400">Posts</p></div>
-            <div><p className="font-bold text-base">{user.stats.following}</p><p className="text-[11px] text-slate-400">Following</p></div>
-          </div>
-        </div>
-        <div className="mt-4">
-          <h2 className="font-bold text-sm">{user.name}</h2>
-          <p className="text-xs text-amber-400">@{user.handle}</p>
-          <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">{user.bio}</p>
-        </div>
-        <div className="flex gap-2.5 mt-4">
-          {currentUser ? (
-            <>
-              <button onClick={onOpenEditProfile} className="flex-1 bg-white hover:bg-slate-200 text-slate-950 font-semibold text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 transition-colors"><Edit3 size={13} /> Edit Profile</button>
-              <button onClick={() => supabase.auth.signOut()} className="px-3.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-semibold text-xs py-2 rounded-xl flex items-center gap-1.5 transition-colors"><LogOut size={14} /> Log Out</button>
-            </>
-          ) : (
-            <button onClick={onOpenAuth} className="flex-1 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs py-2.5 rounded-xl shadow-lg shadow-amber-500/20 transition-all">Sign In to Your Account</button>
-          )}
-        </div>
-      </div>
-      <div className="flex border-b border-slate-800">
-        <button onClick={() => setProfileTab("posts")} className={`flex-1 py-2.5 flex justify-center items-center gap-2 text-xs font-semibold border-b-2 transition-all ${profileTab === "posts" ? "border-amber-400 text-amber-400" : "border-transparent text-slate-500 hover:text-slate-300"}`}><Grid size={16} /> Posts</button>
-        <button onClick={() => setProfileTab("sparks")} className={`flex-1 py-2.5 flex justify-center items-center gap-2 text-xs font-semibold border-b-2 transition-all ${profileTab === "sparks" ? "border-amber-400 text-amber-400" : "border-transparent text-slate-500 hover:text-slate-300"}`}><Film size={16} /> Sparks</button>
-      </div>
-      <div className="py-8 text-center text-slate-500 text-xs">Posts & clips are shared directly to the public feeds.</div>
     </div>
   );
 }
@@ -1384,46 +1586,6 @@ function AuthModal({ onClose }) {
             {isSignUp ? "Already have an account? Sign in" : "Don't have an account? Sign up"}
           </button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-// --- STORY VIEWER MODAL ---
-function StoryViewerModal({ stories, initialIndex, onClose }) {
-  const [currentIndex, setCurrentIndex] = useState(initialIndex);
-  const [progress, setProgress] = useState(0);
-  const activeStory = stories[currentIndex];
-
-  useEffect(() => {
-    const step = 50;
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          if (currentIndex < stories.length - 1) { setCurrentIndex((i) => i + 1); return 0; }
-          else { onClose(); return 100; }
-        }
-        return prev + (step / 5000) * 100;
-      });
-    }, step);
-    return () => clearInterval(interval);
-  }, [currentIndex]);
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
-      <div className="relative w-full max-w-md h-full sm:h-[85vh] bg-slate-950 sm:rounded-2xl overflow-hidden flex flex-col">
-        <div className="absolute top-3 inset-x-0 z-20 flex gap-1.5 px-3">
-          {stories.map((_, i) => (
-            <div key={i} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden">
-              <div className="h-full bg-white transition-all duration-75" style={{ width: i === currentIndex ? `${progress}%` : i < currentIndex ? "100%" : "0%" }} />
-            </div>
-          ))}
-        </div>
-        <div className="absolute top-6 inset-x-0 z-20 flex items-center justify-between px-4">
-          <div className="flex items-center gap-2"><img src={activeStory.userAvatar} className="w-8 h-8 rounded-full object-cover" /><span className="font-semibold text-sm">{activeStory.username}</span></div>
-          <button onClick={onClose} className="p-1 text-white/80 hover:text-white"><X size={20} /></button>
-        </div>
-        <img src={activeStory.mediaUrl} alt="" className="w-full h-full object-cover" />
       </div>
     </div>
   );
