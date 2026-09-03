@@ -59,7 +59,8 @@ import {
   Info,
   Layers,
   Award,
-  Download
+  Mic,
+  Square
 } from "lucide-react";
 
 // --- WEB AUDIO API CHIMES ---
@@ -199,6 +200,80 @@ function FloatingHeartsOverlay({ trigger }) {
   );
 }
 
+// --- AUDIO WAVE VOICE NOTE PLAYER ---
+function VoiceNoteBubble({ audioUrl, isMe }) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const audioRef = useRef(null);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const handleTimeUpdate = () => {
+      if (audio.duration) {
+        setProgress((audio.currentTime / audio.duration) * 100);
+      }
+    };
+    const handleEnded = () => {
+      setIsPlaying(false);
+      setProgress(0);
+    };
+
+    audio.addEventListener("timeupdate", handleTimeUpdate);
+    audio.addEventListener("ended", handleEnded);
+    return () => {
+      audio.removeEventListener("timeupdate", handleTimeUpdate);
+      audio.removeEventListener("ended", handleEnded);
+    };
+  }, []);
+
+  const togglePlayback = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      audioRef.current.play();
+      setIsPlaying(true);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-3 py-1 px-2 w-52 sm:w-60">
+      <audio ref={audioRef} src={audioUrl} preload="metadata" />
+      <button
+        type="button"
+        onClick={togglePlayback}
+        className={`p-2 rounded-full transition-transform hover:scale-105 ${
+          isMe ? "bg-[#2C2B30] text-[#F58F7C]" : "bg-[#F58F7C] text-[#2C2B30]"
+        }`}
+      >
+        {isPlaying ? <Pause size={14} className="fill-current" /> : <Play size={14} className="fill-current translate-x-0.5" />}
+      </button>
+
+      <div className="flex-1 flex flex-col gap-1">
+        <div className="flex items-center gap-0.5 h-6">
+          {[40, 70, 30, 90, 60, 100, 45, 80, 50, 85, 30, 95, 60, 40].map((height, idx) => (
+            <div
+              key={idx}
+              className={`flex-1 rounded-full transition-all ${
+                (idx / 14) * 100 <= progress
+                  ? isMe ? "bg-[#2C2B30]" : "bg-[#F58F7C]"
+                  : isMe ? "bg-[#2C2B30]/30" : "bg-[#D6D6D6]/30"
+              }`}
+              style={{ height: `${height}%` }}
+            />
+          ))}
+        </div>
+        <span className={`text-[9px] font-semibold self-end ${isMe ? "text-[#2C2B30]/80" : "text-[#D6D6D6]/70"}`}>
+          Voice Note
+        </span>
+      </div>
+    </div>
+  );
+}
+
 const FILTER_STYLES = {
   normal: { label: "Normal", filter: "none" },
   warm: { label: "Tokyo Warm", filter: "contrast(115%) sepia(28%) saturate(140%)" },
@@ -228,7 +303,7 @@ const OFFICIAL_TEST_STORIES = [
     audioUrl: "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=lofi-study-112191.mp3",
     audioTitle: "Lofi Study Beats • Nest Sounds",
     category: "announcement",
-    caption: "🚀 Official Test Account #1: Realtime Online Presence & PWA Shell active!",
+    caption: "🚀 Official Test Account #1: Voice notes & dummy sparks live!",
   },
   {
     id: "s2",
@@ -238,7 +313,7 @@ const OFFICIAL_TEST_STORIES = [
     audioUrl: "https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3?filename=chill-abstract-intention-12099.mp3",
     audioTitle: "Chill Urban Sunset • RetroWave",
     category: "routine",
-    caption: "Official Test Account #2: Live typing indicators & mobile home screen app! ☕🌊",
+    caption: "Official Test Account #2: Tap the mic button to send voice notes! 🎙️🌊",
   },
 ];
 
@@ -274,7 +349,7 @@ export default function App() {
   const [notifications, setNotifications] = useState([]);
   const [unreadMsgCount, setUnreadMsgCount] = useState(0);
 
-  // Realtime Online Presence Map: Set of handles
+  // Realtime Online Presence Map
   const [onlineUsers, setOnlineUsers] = useState(new Set());
 
   const [loadingPosts, setLoadingPosts] = useState(true);
@@ -338,7 +413,7 @@ export default function App() {
   const currentAvatar = profile?.avatar_url || null;
   const currentBanner = profile?.banner_url || null;
 
-  // --- SUPABASE PRESENCE (GLOBAL ONLINE CHANNEL) ---
+  // Supabase Presence
   useEffect(() => {
     if (!currentHandle || currentHandle === "guest") return;
 
@@ -836,7 +911,7 @@ export default function App() {
           <div className="flex flex-col items-center gap-3">
             <div className="w-full flex justify-between items-center px-1">
               <span className={`text-xs font-semibold uppercase tracking-wider ${isDarkMode ? "text-[#D6D6D6]" : "text-slate-500"}`}>
-                Trending Sparks
+                Trending Sparks ({sparks.length})
               </span>
               <button
                 onClick={() => setIsUploadSparkOpen(true)}
@@ -848,6 +923,8 @@ export default function App() {
             <div className="w-full h-[76vh] overflow-y-scroll snap-y snap-mandatory rounded-3xl border border-[#4F4F51] bg-[#2C2B30] shadow-2xl">
               {loadingSparks ? (
                 <BrandLoader message="Fetching Sparks..." />
+              ) : sparks.length === 0 ? (
+                <div className="text-center py-20 text-xs text-slate-500">No Sparks found. Upload your first clip!</div>
               ) : (
                 sparks.map((spark) => (
                   <SparkCard
@@ -1363,7 +1440,7 @@ function HomeView({
   );
 }
 
-// --- GLASS VIDEO PLAYER WITH FLOATING HEARTS ON DOUBLE TAP ---
+// --- GLASS VIDEO PLAYER ---
 function GlassVideoPlayer({ src, audioUrl, isDarkMode, onDoubleTap }) {
   const videoRef = useRef(null);
   const audioRef = useRef(null);
@@ -1771,8 +1848,6 @@ function UserProfileModal({ isDarkMode, profile, isFollowing, isOnline, currentH
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 isolate">
       <div className={`w-full max-w-sm rounded-3xl relative border shadow-2xl flex flex-col ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51] text-[#D6D6D6]" : "bg-white border-[#D6D6D6] text-[#2C2B30]"}`}>
-        
-        {/* Banner with Rounded Top Corners */}
         <div className="h-32 w-full relative bg-gradient-to-r from-[#F58F7C] via-[#F2C4CE] to-[#4F4F51] rounded-t-3xl overflow-hidden shrink-0 z-0">
           {profile.banner_url && (
             <img src={profile.banner_url} className="w-full h-full object-cover" alt="Banner" />
@@ -1782,7 +1857,6 @@ function UserProfileModal({ isDarkMode, profile, isFollowing, isOnline, currentH
           </button>
         </div>
 
-        {/* Profile Info Container */}
         <div className="px-5 pb-5 pt-0 overflow-visible">
           <div className="flex justify-between items-end -mt-12 mb-3 relative z-30">
             <div className="p-1 rounded-full bg-[#2C2B30] ring-4 ring-[#2C2B30] shadow-2xl">
@@ -2853,7 +2927,7 @@ function EditProfileModal({ isDarkMode, currentProfile, onClose, onSave }) {
   );
 }
 
-// --- MESSAGES VIEW WITH REALTIME TYPING & ONLINE PRESENCE ---
+// --- MESSAGES VIEW WITH REALTIME VOICE NOTES & WAVEFORMS ---
 function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, followingHandles, onlineUsers, soundEnabled, onSelectChat, onWatchFullscreenSpark, onBack }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
@@ -2863,6 +2937,13 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
   const [searchedFollowedUsers, setSearchedFollowedUsers] = useState([]);
   const [isSearchingUsers, setIsSearchingUsers] = useState(false);
   const [partnerIsTyping, setPartnerIsTyping] = useState(false);
+
+  // Audio Recording State
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [recordDuration, setRecordDuration] = useState(0);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recordTimerRef = useRef(null);
 
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -2887,7 +2968,7 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
             userId: partner,
             username: partner,
             avatar: null,
-            lastMessage: m.content,
+            lastMessage: m.content?.startsWith("🎙️ [Voice Note]") ? "🎙️ Voice Note" : m.content,
             time: new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
             unread: m.recipient_handle === currentHandle && !m.is_read
           });
@@ -2926,7 +3007,6 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
     return () => clearTimeout(debounce);
   }, [searchQuery, currentHandle]);
 
-  // Active Chat Message Stream + Typing Presence Channel
   useEffect(() => {
     if (!activeChat || !currentUser) return;
     const convId = getConversationId(currentHandle, activeChat.userId);
@@ -2941,7 +3021,6 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
 
     loadMessages();
 
-    // Channel for Realtime Messages + Ephemeral Typing Indicators
     const chatRoom = supabase
       .channel(`chat_${convId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${convId}` }, (payload) => {
@@ -3012,6 +3091,80 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
     }
   };
 
+  // --- RECORD AUDIO NOTE FUNCTIONS ---
+  const handleStartAudioRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const recorder = new MediaRecorder(stream);
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        if (audioBlob.size < 500) return; // Prevent empty click records
+
+        const convId = getConversationId(currentHandle, activeChat.userId);
+        const fileName = `${convId}_${Date.now()}.webm`;
+        const tempAudioUrl = URL.createObjectURL(audioBlob);
+
+        // Optimistic Audio Message
+        const tempId = `tvoice_${Date.now()}`;
+        const optimisticAudio = {
+          id: tempId,
+          conversation_id: convId,
+          sender_handle: currentHandle,
+          recipient_handle: activeChat.userId,
+          content: `🎙️ [Voice Note]: ${tempAudioUrl}`,
+          created_at: new Date().toISOString(),
+          is_read: false,
+        };
+
+        setMessages((prev) => [...prev, optimisticAudio]);
+        playHapticSFX("upload", soundEnabled);
+
+        try {
+          const { error } = await supabase.storage.from("chat-voice-notes").upload(fileName, audioBlob);
+          if (error) throw error;
+          const { data } = supabase.storage.from("chat-voice-notes").getPublicUrl(fileName);
+
+          await supabase.from("messages").insert([
+            {
+              conversation_id: convId,
+              sender_handle: currentHandle,
+              recipient_handle: activeChat.userId,
+              content: `🎙️ [Voice Note]: ${data.publicUrl}`,
+              is_read: false,
+            },
+          ]);
+        } catch (err) {
+          console.error("Audio upload error:", err);
+        }
+      };
+
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setIsRecordingAudio(true);
+      setRecordDuration(0);
+      recordTimerRef.current = setInterval(() => {
+        setRecordDuration((d) => d + 1);
+      }, 1000);
+    } catch (err) {
+      alert("Microphone permission required: " + err.message);
+    }
+  };
+
+  const handleStopAudioRecording = () => {
+    if (mediaRecorderRef.current && isRecordingAudio) {
+      mediaRecorderRef.current.stop();
+      setIsRecordingAudio(false);
+      if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+    }
+  };
+
   if (activeChat) {
     const isPartnerOnline = onlineUsers.has(activeChat.userId);
 
@@ -3040,6 +3193,7 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
             messages.map((msg) => {
               const isMe = msg.sender_handle === currentHandle;
               const isSparkShare = msg.content?.includes("storage/v1/object/public/sparks-media");
+              const isVoiceNote = msg.content?.startsWith("🎙️ [Voice Note]:");
 
               let videoUrl = null;
               let sparkCaption = "Shared Spark";
@@ -3050,9 +3204,15 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
                 if (textPart) sparkCaption = textPart;
               }
 
+              const voiceUrl = isVoiceNote ? msg.content.replace("🎙️ [Voice Note]:", "").trim() : null;
+
               return (
                 <div key={msg.id} className={`flex flex-col max-w-[80%] ${isMe ? "self-end items-end" : "self-start items-start"}`}>
-                  {isSparkShare && videoUrl ? (
+                  {isVoiceNote && voiceUrl ? (
+                    <div className={`p-1.5 rounded-2xl border shadow-md ${isMe ? "bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] text-[#2C2B30] rounded-tr-none border-transparent" : isDarkMode ? "bg-[#4F4F51] text-[#D6D6D6] rounded-tl-none border-[#4F4F51]" : "bg-slate-200 text-slate-900 rounded-tl-none border-slate-300"}`}>
+                      <VoiceNoteBubble audioUrl={voiceUrl} isMe={isMe} />
+                    </div>
+                  ) : isSparkShare && videoUrl ? (
                     <div
                       onClick={() => onWatchFullscreenSpark(videoUrl)}
                       className={`p-2.5 rounded-2xl border shadow-lg flex flex-col gap-2 cursor-pointer transition-transform hover:scale-[1.02] active:scale-[0.98] ${
@@ -3098,15 +3258,47 @@ function MessagesView({ isDarkMode, currentUser, currentHandle, activeChat, foll
           <div ref={messagesEndRef} />
         </div>
 
+        {/* Dynamic Chat Input Bar with Recording Button */}
         <form onSubmit={handleSendSubmit} className={`p-3 border-t flex items-center gap-2 ${isDarkMode ? "bg-[#2C2B30] border-[#4F4F51]" : "bg-white border-slate-200"}`}>
-          <input
-            type="text"
-            value={inputText}
-            onChange={handleInputChange}
-            placeholder={`Message @${activeChat.userId}...`}
-            className={`flex-1 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51] text-white" : "bg-slate-100 border-slate-200 text-slate-900"}`}
-          />
-          <button type="submit" disabled={!inputText.trim()} className="p-2 bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] hover:opacity-90 disabled:opacity-40 text-[#2C2B30] font-bold rounded-xl transition-all"><Send size={15} /></button>
+          {isRecordingAudio ? (
+            <div className="flex-1 flex items-center justify-between px-4 py-2 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 animate-pulse">
+              <div className="flex items-center gap-2 text-xs font-bold">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                <span>Recording Voice Note... 00:{recordDuration < 10 ? `0${recordDuration}` : recordDuration}</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleStopAudioRecording}
+                className="p-1.5 rounded-lg bg-red-500 text-white font-bold hover:scale-105 transition-transform"
+              >
+                <Square size={13} className="fill-white" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <input
+                type="text"
+                value={inputText}
+                onChange={handleInputChange}
+                placeholder={`Message @${activeChat.userId}...`}
+                className={`flex-1 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#F58F7C] border ${isDarkMode ? "bg-[#4F4F51]/30 border-[#4F4F51] text-white" : "bg-slate-100 border-slate-200 text-slate-900"}`}
+              />
+              {inputText.trim() ? (
+                <button type="submit" className="p-2 bg-gradient-to-r from-[#F58F7C] to-[#F2C4CE] hover:opacity-90 text-[#2C2B30] font-bold rounded-xl transition-all">
+                  <Send size={15} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleStartAudioRecording}
+                  className="p-2 rounded-xl bg-[#4F4F51]/40 border border-[#4F4F51] text-[#F58F7C] hover:bg-[#F58F7C]/20 transition-all"
+                  title="Record Voice Note"
+                >
+                  <Mic size={16} />
+                </button>
+              )}
+            </>
+          )}
         </form>
       </div>
     );
